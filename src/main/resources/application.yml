@@ -1,0 +1,19 @@
+
+server:
+  port: 9080
+spring:
+  application:
+    name: smart-bike
+
+  datasource:
+    url: jdbc:mysql://localhost:3306/smartbike?createDatabaseIfNotExist=true&useSSL=false&serverTimezone=UTC
+    username: root
+    password: password
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+
+mqtt:
+  broker: tcp://localhost:1883
+  client-id: spring-backend
