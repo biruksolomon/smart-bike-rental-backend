@@ -8,7 +8,7 @@ spring:
   datasource:
     url: jdbc:mysql://localhost:3306/smartbike?createDatabaseIfNotExist=true&useSSL=false&serverTimezone=UTC
     username: root
-    password: password
+    password: 837535Abc@
   jpa:
     hibernate:
       ddl-auto: update
