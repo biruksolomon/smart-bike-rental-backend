@@ -34,7 +34,7 @@ public class BikeController {
     }
 
     @PostMapping("/{bikeId}/lock")
-    public String lock(@PathVariable Long bikeId) throws Exception {
+    public String lock(@PathVariable String bikeId) throws Exception {
         bikeService.lockBike(bikeId);
         return "Lock command sent";
     }
