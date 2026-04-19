@@ -28,11 +28,11 @@ public class BikeService {
         rideRepository.save(ride);
     }
 
-    public void lockBike(String bikeId) throws Exception {
+    public void lockBike(Long bikeId) throws Exception {
 
         mqttService.publish("bike/" + bikeId + "/command", "LOCK");
 
-        Ride ride = rideRepository.findByBikeIdAndActiveTrue(bikeId);
+        Ride ride = rideRepository.findByBikeIdAndActiveTrue(bikeId).orElseThrow(()->new RuntimeException("not found"));
 
         ride.setEndTime(LocalDateTime.now());
         ride.setActive(false);
