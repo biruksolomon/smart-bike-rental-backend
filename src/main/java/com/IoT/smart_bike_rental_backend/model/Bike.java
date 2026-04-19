@@ -18,5 +18,12 @@ public class Bike {
 
     private String status;
 
+    @Column(unique = true)
+    private String qrCode;
+
+    @ManyToOne
+    @JoinColumn(name = "current_user_id", nullable = true)
+    private User currentUser;
+
     private LocalDateTime lastUpdated;
 }
