@@ -6,6 +6,7 @@ import lombok.Data;
 import java.time.LocalDateTime;
 
 @Entity
+@Table(name = "ride")
 @Data
 public class Ride {
 
@@ -18,7 +19,7 @@ public class Ride {
     private User user;
 
     @ManyToOne
-    @JoinColumn(name = "bike_id")
+    @JoinColumn(name = "bike_id", referencedColumnName = "id")
     private Bike bike;
 
     private LocalDateTime startTime;
@@ -26,5 +27,13 @@ public class Ride {
 
     private Double cost;
 
+    @Column(name = "is_active")
     private boolean active;
+
+    @PrePersist
+    protected void onCreate() {
+        if (startTime == null) {
+            startTime = LocalDateTime.now();
+        }
+    }
 }
