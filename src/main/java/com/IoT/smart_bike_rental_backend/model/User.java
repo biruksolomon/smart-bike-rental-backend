@@ -19,6 +19,13 @@ public class User {
 
     private String name;
     private String phone;
+    private String password;
+
+    @Column(name = "role")
+    private String role = "USER";
+
+    @Column(name = "is_active")
+    private Boolean isActive = true;
 
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
