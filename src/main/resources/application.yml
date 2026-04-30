@@ -11,7 +11,7 @@ spring:
     password: 837535Abc@
   jpa:
     hibernate:
-      ddl-auto: create
+      ddl-auto: update
     show-sql: true
 
   security:
@@ -26,3 +26,13 @@ mqtt:
 jwt:
   secret: mySecretKeyForSmartBikeRentalApplicationWithMinimum256BitsLength
   expiration: 86400000
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    enabled: true
+    operations-sorter: method
+    tags-sorter: alpha
+  show-actuator: false
