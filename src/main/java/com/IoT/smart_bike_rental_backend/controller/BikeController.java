@@ -17,6 +17,10 @@ public class BikeController {
     private final BikeService bikeService;
     private final Bikerepository bikeRepository;
 
+    /**
+     * Create a new bike
+     * POST /api/bikes?bikeId=...&qrCode=...
+     */
     @PostMapping
     public Bike createBike(@RequestParam String bikeId,
                            @RequestParam(required = false) String qrCode) {
@@ -30,7 +34,10 @@ public class BikeController {
         return bikeRepository.save(bike);
     }
 
-
+    /**
+     * Get bike by ID
+     * GET /api/bikes/{bikeId}
+     */
     @GetMapping("/{bikeId}")
     public ResponseEntity<?> getBike(@PathVariable String bikeId) {
         var bike = bikeRepository.findByBikeId(bikeId);
@@ -40,20 +47,41 @@ public class BikeController {
         return ResponseEntity.ok(bike.get());
     }
 
+    /**
+     * Get all bikes
+     * GET /api/bikes
+     */
     @GetMapping
     public ResponseEntity<?> getAllBikes() {
         return ResponseEntity.ok(bikeRepository.findAll());
     }
+
+    /**
+     * Unlock a bike via MQTT
+     * POST /api/bikes/{bikeId}/unlock
+     */
     @PostMapping("/{bikeId}/unlock")
-    public String unlock(@PathVariable String bikeId) throws Exception {
-        bikeService.unlockBike(bikeId);
-        return "Unlock command sent";
+    public ResponseEntity<?> unlock(@PathVariable String bikeId) {
+        try {
+            bikeService.unlockBike(bikeId);
+            return ResponseEntity.ok("Unlock command sent");
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body("Failed to send unlock command: " + e.getMessage());
+        }
     }
 
+    /**
+     * Lock a bike via MQTT
+     * POST /api/bikes/{bikeId}/lock
+     */
     @PostMapping("/{bikeId}/lock")
-    public String lock(@PathVariable String bikeId) throws Exception {
-        bikeService.lockBike(bikeId);
-        return "Lock command sent";
+    public ResponseEntity<?> lock(@PathVariable String bikeId) {
+        try {
+            bikeService.lockBike(bikeId);
+            return ResponseEntity.ok("Lock command sent");
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body("Failed to send lock command: " + e.getMessage());
+        }
     }
 }
 
