@@ -15,6 +15,10 @@ public class RideController {
 
     private final RideService rideService;
 
+    /**
+     * Start a new ride
+     * POST /api/rides/start?userId=...&qrCode=...
+     */
     @PostMapping("/start")
     public ResponseEntity<?> startRide(@RequestParam Long userId,
                                        @RequestParam String qrCode) {
@@ -26,6 +30,10 @@ public class RideController {
         }
     }
 
+    /**
+     * End a ride
+     * POST /api/rides/end?rideId=...
+     */
     @PostMapping("/end")
     public ResponseEntity<?> endRide(@RequestParam Long rideId) {
         try {
@@ -36,6 +44,10 @@ public class RideController {
         }
     }
 
+    /**
+     * Get ride history for a user
+     * GET /api/rides/user/{userId}
+     */
     @GetMapping("/user/{userId}")
     public ResponseEntity<?> getUserRides(@PathVariable Long userId) {
         try {
@@ -46,6 +58,10 @@ public class RideController {
         }
     }
 
+    /**
+     * Get specific ride by ID
+     * GET /api/rides/{rideId}
+     */
     @GetMapping("/{rideId}")
     public ResponseEntity<?> getRide(@PathVariable Long rideId) {
         try {
