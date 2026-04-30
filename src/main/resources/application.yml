@@ -11,9 +11,18 @@ spring:
     password: 837535Abc@
   jpa:
     hibernate:
-      ddl-auto: update
+      ddl-auto: create
     show-sql: true
+
+  security:
+    user:
+      name: admin
+      password: admin123
 
 mqtt:
   broker: tcp://localhost:1883
   client-id: spring-backend
+
+jwt:
+  secret: mySecretKeyForSmartBikeRentalApplicationWithMinimum256BitsLength
+  expiration: 86400000
