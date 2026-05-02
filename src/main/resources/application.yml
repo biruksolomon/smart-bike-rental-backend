@@ -2,8 +2,12 @@
 server:
   port: 9080
 spring:
+
   application:
     name: smart-bike
+    version: 1
+    description: Anonymous confession and advice platform backend
+    base-url: http://localhost:9080
 
   datasource:
     url: jdbc:mysql://localhost:3306/smartbike?createDatabaseIfNotExist=true&useSSL=false&serverTimezone=UTC
@@ -30,9 +34,35 @@ jwt:
 springdoc:
   api-docs:
     path: /v3/api-docs
+    enabled: true
   swagger-ui:
     path: /swagger-ui.html
     enabled: true
     operations-sorter: method
     tags-sorter: alpha
+    try-it-out-enabled: true
+    filter: true
+    syntax-highlight:
+      theme: monokai
+    doc-expansion: list
+    use-root-path: false
+  packages-to-scan: com.IoT.smart_bike_rental_backend.controller
+  paths-to-match: /**
   show-actuator: false
+
+
+logging:
+  level:
+    org:
+      springframework:
+        security:
+          web:
+            FilterChainProxy: DEBUG
+            access:
+              intercept:
+                FilterSecurityInterceptor: DEBUG
+    com:
+      IoT:
+        smart_bike_rental_backend:
+          controller:
+            AuthController: DEBUG
