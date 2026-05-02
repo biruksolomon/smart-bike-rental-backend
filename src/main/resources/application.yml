@@ -1,6 +1,6 @@
 
 server:
-  port: 9080
+  port: 7080
 spring:
 
   application:
@@ -8,6 +8,20 @@ spring:
     version: 1
     description: Anonymous confession and advice platform backend
     base-url: http://localhost:9080
+
+  mail:
+    host: smtp.gmail.com
+    port: 587
+    username: biruksolomonmoges@gmail.com
+    password: kbemdrrbdmkjxden
+    from: noreply@smartbike.com
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+            required: true
 
   datasource:
     url: jdbc:mysql://localhost:3306/smartbike?createDatabaseIfNotExist=true&useSSL=false&serverTimezone=UTC
@@ -66,16 +80,3 @@ logging:
         smart_bike_rental_backend:
           controller:
             AuthController: DEBUG
-  mail:
-    host: smtp.gmail.com
-    port: 587
-    username: your-email@gmail.com
-    password: your-app-password
-    from: noreply@smartbike.com
-    properties:
-      mail:
-        smtp:
-          auth: true
-          starttls:
-            enable: true
-            required: true

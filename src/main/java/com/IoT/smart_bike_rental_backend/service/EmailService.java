@@ -14,10 +14,10 @@ public class EmailService {
 
     private final JavaMailSender mailSender;
 
-    @Value("${spring.mail.from:noreply@smartbike.com}")
+    @Value("${spring.mail.username}")
     private String fromEmail;
 
-    @Value("${app.base-url:http://localhost:9080}")
+    @Value("${spring.application.base-url}")
     private String baseUrl;
 
     /**
