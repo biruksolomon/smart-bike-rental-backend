@@ -27,11 +27,11 @@ public class User {
     @Column(name = "is_active")
     private Boolean isActive = true;
 
-    @Column(name = "password_reset_token")
-    private String passwordResetToken;
+    @Column(name = "password_reset_code")
+    private String passwordResetCode;
 
-    @Column(name = "password_reset_token_expiry")
-    private LocalDateTime passwordResetTokenExpiry;
+    @Column(name = "password_reset_code_expiry")
+    private LocalDateTime passwordResetCodeExpiry;
 
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
