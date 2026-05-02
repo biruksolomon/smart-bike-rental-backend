@@ -14,31 +14,28 @@ public class EmailService {
 
     private final JavaMailSender mailSender;
 
-    @Value("${spring.mail.username}")
+    @Value("${spring.mail.from}")
     private String fromEmail;
 
-    @Value("${spring.application.base-url}")
-    private String baseUrl;
+
 
     /**
-     * Send password reset email to user
+     * Send password reset code via email to user
      *
-     * @param email   User email
-     * @param token   Password reset token
+     * @param email    User email
+     * @param code     6-digit reset code
      * @param userName User name
      */
-    public void sendPasswordResetEmail(String email, String token, String userName) {
+    public void sendPasswordResetEmail(String email, String code, String userName) {
         try {
-            String resetLink = baseUrl + "/api/auth/reset-password?token=" + token;
-
             SimpleMailMessage message = new SimpleMailMessage();
             message.setFrom(fromEmail);
             message.setTo(email);
-            message.setSubject("Password Reset Request - Smart Bike Rental");
-            message.setText(buildPasswordResetEmailBody(userName, resetLink));
+            message.setSubject("Password Reset Code - Smart Bike Rental");
+            message.setText(buildPasswordResetEmailBody(userName, code));
 
             mailSender.send(message);
-            log.info("Password reset email sent to: {}", email);
+            log.info("Password reset code email sent to: {}", email);
         } catch (Exception e) {
             log.error("Failed to send password reset email to: {}", email, e);
             throw new RuntimeException("Failed to send email", e);
@@ -46,19 +43,21 @@ public class EmailService {
     }
 
     /**
-     * Build password reset email body
+     * Build password reset email body with reset code
      */
-    private String buildPasswordResetEmailBody(String userName, String resetLink) {
+    private String buildPasswordResetEmailBody(String userName, String resetCode) {
         return String.format(
                 "Hello %s,\n\n" +
                         "You have requested to reset your password for your Smart Bike Rental account.\n\n" +
-                        "Please click the link below to reset your password:\n" +
-                        "%s\n\n" +
-                        "This link will expire in 15 minutes.\n\n" +
+                        "Please use the following 6-digit code to reset your password:\n\n" +
+                        "════════════════════\n" +
+                        "     %s\n" +
+                        "════════════════════\n\n" +
+                        "This code will expire in 15 minutes.\n\n" +
                         "If you did not request this password reset, please ignore this email.\n\n" +
                         "Best regards,\n" +
                         "Smart Bike Rental Team",
-                userName, resetLink
+                userName, resetCode
         );
     }
 }

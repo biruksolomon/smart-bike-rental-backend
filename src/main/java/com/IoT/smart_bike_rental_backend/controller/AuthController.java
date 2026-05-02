@@ -153,13 +153,13 @@ public class AuthController {
     }
 
     /**
-     * Forgot password - Request password reset
+     * Forgot password - Request password reset code
      * POST /api/auth/forgot-password
      * Body: { "email": "user@example.com" }
      */
     @PostMapping("/forgot-password")
-    @Operation(summary = "Request password reset", description = "Send password reset email to user's email address")
-    @ApiResponse(responseCode = "200", description = "If email exists, password reset link has been sent")
+    @Operation(summary = "Request password reset code", description = "Send password reset code to user's email address")
+    @ApiResponse(responseCode = "200", description = "If email exists, password reset code has been sent")
     @ApiResponse(responseCode = "400", description = "Failed to send email")
     public ResponseEntity<?> forgotPassword(@org.springframework.web.bind.annotation.RequestBody PasswordResetRequest request) {
         AuthResponse response = authService.forgotPassword(request);
@@ -170,14 +170,14 @@ public class AuthController {
     }
 
     /**
-     * Reset password - Confirm password reset with token
+     * Reset password - Confirm password reset with code
      * POST /api/auth/reset-password
-     * Body: { "token": "reset-token", "newPassword": "newpass123" }
+     * Body: { "email": "user@example.com", "code": "123456", "newPassword": "newpass123" }
      */
     @PostMapping("/reset-password")
-    @Operation(summary = "Reset password with token", description = "Reset user password using the reset token from email")
+    @Operation(summary = "Reset password with code", description = "Reset user password using the 6-digit code from email")
     @ApiResponse(responseCode = "200", description = "Password reset successfully")
-    @ApiResponse(responseCode = "400", description = "Invalid or expired token")
+    @ApiResponse(responseCode = "400", description = "Invalid or expired code")
     public ResponseEntity<?> resetPassword(@org.springframework.web.bind.annotation.RequestBody PasswordResetConfirm request) {
         AuthResponse response = authService.resetPassword(request);
         if (response.getError()) {
@@ -187,15 +187,15 @@ public class AuthController {
     }
 
     /**
-     * Validate reset token
-     * GET /api/auth/validate-reset-token?token=...
+     * Validate reset code
+     * GET /api/auth/validate-reset-code?email=...&code=...
      */
-    @GetMapping("/validate-reset-token")
-    @Operation(summary = "Validate reset token", description = "Check if a password reset token is valid and not expired")
-    @ApiResponse(responseCode = "200", description = "Token is valid")
-    @ApiResponse(responseCode = "400", description = "Token is invalid or expired")
-    public ResponseEntity<?> validateResetToken(@RequestParam String token) {
-        AuthResponse response = authService.validateResetToken(token);
+    @GetMapping("/validate-reset-code")
+    @Operation(summary = "Validate reset code", description = "Check if a password reset code is valid and not expired")
+    @ApiResponse(responseCode = "200", description = "Code is valid")
+    @ApiResponse(responseCode = "400", description = "Code is invalid or expired")
+    public ResponseEntity<?> validateResetCode(@RequestParam String email, @RequestParam String code) {
+        AuthResponse response = authService.validateResetCode(email, code);
         if (response.getError()) {
             return ResponseEntity.badRequest().body(response);
         }

@@ -289,7 +289,7 @@ public class AuthService {
 
     /**
      * Initiate password reset by email
-     * Generates a reset token and sends it to user's email
+     * Generates a 6-digit reset code and sends it to user's email
      */
     public AuthResponse forgotPassword(PasswordResetRequest request) {
         Optional<User> userOptional = userRepository.findByEmail(request.getEmail());
@@ -298,23 +298,23 @@ public class AuthService {
             log.warn("Password reset requested for non-existent email: {}", request.getEmail());
             return AuthResponse.builder()
                     .error(false)
-                    .message("If the email exists, a password reset link has been sent")
+                    .message("If the email exists, a password reset code has been sent")
                     .build();
         }
 
         User user = userOptional.get();
 
-        // Generate reset token (valid for 15 minutes)
-        String resetToken = UUID.randomUUID().toString();
-        user.setPasswordResetToken(resetToken);
-        user.setPasswordResetTokenExpiry(LocalDateTime.now().plusMinutes(15));
+        // Generate 6-digit reset code (valid for 15 minutes)
+        String resetCode = generateResetCode();
+        user.setPasswordResetCode(resetCode);
+        user.setPasswordResetCodeExpiry(LocalDateTime.now().plusMinutes(15));
 
         userRepository.save(user);
 
-        // Send password reset email
+        // Send password reset email with code
         try {
-            emailService.sendPasswordResetEmail(user.getEmail(), resetToken, user.getName());
-            log.info("Password reset email sent to: {}", user.getEmail());
+            emailService.sendPasswordResetEmail(user.getEmail(), resetCode, user.getName());
+            log.info("Password reset code sent to: {}", user.getEmail());
         } catch (Exception e) {
             log.error("Failed to send password reset email to: {}", user.getEmail(), e);
             return AuthResponse.builder()
@@ -325,32 +325,40 @@ public class AuthService {
 
         return AuthResponse.builder()
                 .error(false)
-                .message("If the email exists, a password reset link has been sent")
+                .message("If the email exists, a password reset code has been sent")
                 .build();
     }
 
     /**
-     * Reset password using reset token
+     * Reset password using reset code
      */
     public AuthResponse resetPassword(PasswordResetConfirm request) {
-        // Find user by reset token
-        Optional<User> userOptional = userRepository.findByPasswordResetToken(request.getToken());
+        // Find user by email
+        Optional<User> userOptional = userRepository.findByEmail(request.getEmail());
 
         if (userOptional.isEmpty()) {
             return AuthResponse.builder()
                     .error(true)
-                    .message("Invalid reset token")
+                    .message("Email not found")
                     .build();
         }
 
         User user = userOptional.get();
 
-        // Check if token has expired
-        if (user.getPasswordResetTokenExpiry() == null ||
-                LocalDateTime.now().isAfter(user.getPasswordResetTokenExpiry())) {
+        // Check if reset code exists and matches
+        if (user.getPasswordResetCode() == null || !user.getPasswordResetCode().equals(request.getCode())) {
             return AuthResponse.builder()
                     .error(true)
-                    .message("Reset token has expired")
+                    .message("Invalid reset code")
+                    .build();
+        }
+
+        // Check if code has expired
+        if (user.getPasswordResetCodeExpiry() == null ||
+                LocalDateTime.now().isAfter(user.getPasswordResetCodeExpiry())) {
+            return AuthResponse.builder()
+                    .error(true)
+                    .message("Reset code has expired")
                     .build();
         }
 
@@ -362,10 +370,10 @@ public class AuthService {
                     .build();
         }
 
-        // Update password and clear reset token
+        // Update password and clear reset code
         user.setPassword(passwordEncoder.encode(request.getNewPassword()));
-        user.setPasswordResetToken(null);
-        user.setPasswordResetTokenExpiry(null);
+        user.setPasswordResetCode(null);
+        user.setPasswordResetCodeExpiry(null);
 
         User updatedUser = userRepository.save(user);
         log.info("Password reset successful for user: {}", updatedUser.getEmail());
@@ -391,31 +399,47 @@ public class AuthService {
     }
 
     /**
-     * Validate password reset token
+     * Validate password reset code
      */
-    public AuthResponse validateResetToken(String token) {
-        Optional<User> userOptional = userRepository.findByPasswordResetToken(token);
+    public AuthResponse validateResetCode(String email, String code) {
+        Optional<User> userOptional = userRepository.findByEmail(email);
 
         if (userOptional.isEmpty()) {
             return AuthResponse.builder()
                     .error(true)
-                    .message("Invalid reset token")
+                    .message("Email not found")
                     .build();
         }
 
         User user = userOptional.get();
 
-        if (user.getPasswordResetTokenExpiry() == null ||
-                LocalDateTime.now().isAfter(user.getPasswordResetTokenExpiry())) {
+        // Check if reset code matches
+        if (user.getPasswordResetCode() == null || !user.getPasswordResetCode().equals(code)) {
             return AuthResponse.builder()
                     .error(true)
-                    .message("Reset token has expired")
+                    .message("Invalid reset code")
+                    .build();
+        }
+
+        if (user.getPasswordResetCodeExpiry() == null ||
+                LocalDateTime.now().isAfter(user.getPasswordResetCodeExpiry())) {
+            return AuthResponse.builder()
+                    .error(true)
+                    .message("Reset code has expired")
                     .build();
         }
 
         return AuthResponse.builder()
                 .error(false)
-                .message("Reset token is valid")
+                .message("Reset code is valid")
                 .build();
+    }
+
+    /**
+     * Generate a random 6-digit reset code
+     */
+    private String generateResetCode() {
+        int code = (int) (Math.random() * 900000) + 100000;
+        return String.valueOf(code);
     }
 }
