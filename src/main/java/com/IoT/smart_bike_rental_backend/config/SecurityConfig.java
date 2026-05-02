@@ -43,8 +43,27 @@ public class SecurityConfig {
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(authz -> authz
+                        // Swagger/OpenAPI endpoints - MUST be first
+                        .requestMatchers(
+                                "/swagger-ui.html",
+                                "/swagger-ui/index.html",
+                                "/swagger-ui/**",
+                                "/v3/api-docs",
+                                "/v3/api-docs/**",
+                                "/swagger-resources",
+                                "/swagger-resources/**",
+                                "/webjars/**",
+                                "/favicon.ico",
+                                "/error"
+                        ).permitAll()
+                        // Static resources
+                        .requestMatchers("/static/**").permitAll()
+                        .requestMatchers("/test.html").permitAll()
+                        // Public authentication endpoints
                         .requestMatchers("/api/auth/register", "/api/auth/login", "/api/auth/validate").permitAll()
+                        // Public bike listing
                         .requestMatchers(HttpMethod.GET, "/api/bikes", "/api/bikes/**").permitAll()
+                        // All other requests require authentication
                         .anyRequest().authenticated()
                 )
                 .addFilterBefore(jwtAuthenticationFilter(), UsernamePasswordAuthenticationFilter.class)
