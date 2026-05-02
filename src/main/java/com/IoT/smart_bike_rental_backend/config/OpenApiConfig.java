@@ -36,6 +36,11 @@ public class OpenApiConfig {
         servers.add(new Server()
                 .url(baseUrl )
                 .description("Local Development Server"));
+        servers.add(new Server()
+                .url("http://16.171.65.18")
+                .description("Cloud Dev server")
+        );
+
 
      /*   servers.add(new Server()
                 .url("https://api.skegmarket.com")
