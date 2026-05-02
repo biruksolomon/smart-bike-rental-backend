@@ -2,24 +2,31 @@ package com.IoT.smart_bike_rental_backend.service;
 
 import com.IoT.smart_bike_rental_backend.dto.AuthRequest;
 import com.IoT.smart_bike_rental_backend.dto.AuthResponse;
+import com.IoT.smart_bike_rental_backend.dto.PasswordResetConfirm;
+import com.IoT.smart_bike_rental_backend.dto.PasswordResetRequest;
 import com.IoT.smart_bike_rental_backend.dto.TokenValidationResponse;
 import com.IoT.smart_bike_rental_backend.dto.UserProfileResponse;
 import com.IoT.smart_bike_rental_backend.model.User;
 import com.IoT.smart_bike_rental_backend.repository.UserRepository;
 import com.IoT.smart_bike_rental_backend.security.JwtTokenProvider;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
+import java.time.LocalDateTime;
 import java.util.Optional;
+import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class AuthService {
 
     private final UserRepository userRepository;
     private final JwtTokenProvider jwtTokenProvider;
     private final PasswordEncoder passwordEncoder;
+    private final EmailService emailService;
 
     public AuthResponse register(AuthRequest request) {
         // Check if user already exists
@@ -277,6 +284,138 @@ public class AuthService {
                 .role(updatedUser.getRole())
                 .message("Password changed successfully")
                 .error(false)
+                .build();
+    }
+
+    /**
+     * Initiate password reset by email
+     * Generates a reset token and sends it to user's email
+     */
+    public AuthResponse forgotPassword(PasswordResetRequest request) {
+        Optional<User> userOptional = userRepository.findByEmail(request.getEmail());
+        if (userOptional.isEmpty()) {
+            // Security: don't reveal if email exists
+            log.warn("Password reset requested for non-existent email: {}", request.getEmail());
+            return AuthResponse.builder()
+                    .error(false)
+                    .message("If the email exists, a password reset link has been sent")
+                    .build();
+        }
+
+        User user = userOptional.get();
+
+        // Generate reset token (valid for 15 minutes)
+        String resetToken = UUID.randomUUID().toString();
+        user.setPasswordResetToken(resetToken);
+        user.setPasswordResetTokenExpiry(LocalDateTime.now().plusMinutes(15));
+
+        userRepository.save(user);
+
+        // Send password reset email
+        try {
+            emailService.sendPasswordResetEmail(user.getEmail(), resetToken, user.getName());
+            log.info("Password reset email sent to: {}", user.getEmail());
+        } catch (Exception e) {
+            log.error("Failed to send password reset email to: {}", user.getEmail(), e);
+            return AuthResponse.builder()
+                    .error(true)
+                    .message("Failed to send reset email. Please try again later")
+                    .build();
+        }
+
+        return AuthResponse.builder()
+                .error(false)
+                .message("If the email exists, a password reset link has been sent")
+                .build();
+    }
+
+    /**
+     * Reset password using reset token
+     */
+    public AuthResponse resetPassword(PasswordResetConfirm request) {
+        // Find user by reset token
+        Optional<User> userOptional = userRepository.findByPasswordResetToken(request.getToken());
+
+        if (userOptional.isEmpty()) {
+            return AuthResponse.builder()
+                    .error(true)
+                    .message("Invalid reset token")
+                    .build();
+        }
+
+        User user = userOptional.get();
+
+        // Check if token has expired
+        if (user.getPasswordResetTokenExpiry() == null ||
+                LocalDateTime.now().isAfter(user.getPasswordResetTokenExpiry())) {
+            return AuthResponse.builder()
+                    .error(true)
+                    .message("Reset token has expired")
+                    .build();
+        }
+
+        // Validate new password
+        if (request.getNewPassword() == null || request.getNewPassword().length() < 6) {
+            return AuthResponse.builder()
+                    .error(true)
+                    .message("Password must be at least 6 characters long")
+                    .build();
+        }
+
+        // Update password and clear reset token
+        user.setPassword(passwordEncoder.encode(request.getNewPassword()));
+        user.setPasswordResetToken(null);
+        user.setPasswordResetTokenExpiry(null);
+
+        User updatedUser = userRepository.save(user);
+        log.info("Password reset successful for user: {}", updatedUser.getEmail());
+
+        // Generate new token for auto-login after reset
+        String token = jwtTokenProvider.generateToken(
+                updatedUser.getId(),
+                updatedUser.getEmail(),
+                updatedUser.getName(),
+                updatedUser.getRole()
+        );
+
+        return AuthResponse.builder()
+                .token(token)
+                .type("Bearer")
+                .userId(updatedUser.getId())
+                .email(updatedUser.getEmail())
+                .name(updatedUser.getName())
+                .role(updatedUser.getRole())
+                .message("Password reset successfully")
+                .error(false)
+                .build();
+    }
+
+    /**
+     * Validate password reset token
+     */
+    public AuthResponse validateResetToken(String token) {
+        Optional<User> userOptional = userRepository.findByPasswordResetToken(token);
+
+        if (userOptional.isEmpty()) {
+            return AuthResponse.builder()
+                    .error(true)
+                    .message("Invalid reset token")
+                    .build();
+        }
+
+        User user = userOptional.get();
+
+        if (user.getPasswordResetTokenExpiry() == null ||
+                LocalDateTime.now().isAfter(user.getPasswordResetTokenExpiry())) {
+            return AuthResponse.builder()
+                    .error(true)
+                    .message("Reset token has expired")
+                    .build();
+        }
+
+        return AuthResponse.builder()
+                .error(false)
+                .message("Reset token is valid")
                 .build();
     }
 }
