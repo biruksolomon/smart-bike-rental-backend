@@ -2,6 +2,8 @@ package com.IoT.smart_bike_rental_backend.controller;
 
 import com.IoT.smart_bike_rental_backend.dto.AuthRequest;
 import com.IoT.smart_bike_rental_backend.dto.AuthResponse;
+import com.IoT.smart_bike_rental_backend.dto.PasswordResetConfirm;
+import com.IoT.smart_bike_rental_backend.dto.PasswordResetRequest;
 import com.IoT.smart_bike_rental_backend.dto.TokenValidationResponse;
 import com.IoT.smart_bike_rental_backend.dto.UserProfileResponse;
 import com.IoT.smart_bike_rental_backend.service.AuthService;
@@ -144,6 +146,56 @@ public class AuthController {
             @RequestParam String oldPassword,
             @RequestParam String newPassword) {
         AuthResponse response = authService.changePassword(userId, oldPassword, newPassword);
+        if (response.getError()) {
+            return ResponseEntity.badRequest().body(response);
+        }
+        return ResponseEntity.ok(response);
+    }
+
+    /**
+     * Forgot password - Request password reset
+     * POST /api/auth/forgot-password
+     * Body: { "email": "user@example.com" }
+     */
+    @PostMapping("/forgot-password")
+    @Operation(summary = "Request password reset", description = "Send password reset email to user's email address")
+    @ApiResponse(responseCode = "200", description = "If email exists, password reset link has been sent")
+    @ApiResponse(responseCode = "400", description = "Failed to send email")
+    public ResponseEntity<?> forgotPassword(@org.springframework.web.bind.annotation.RequestBody PasswordResetRequest request) {
+        AuthResponse response = authService.forgotPassword(request);
+        if (response.getError()) {
+            return ResponseEntity.badRequest().body(response);
+        }
+        return ResponseEntity.ok(response);
+    }
+
+    /**
+     * Reset password - Confirm password reset with token
+     * POST /api/auth/reset-password
+     * Body: { "token": "reset-token", "newPassword": "newpass123" }
+     */
+    @PostMapping("/reset-password")
+    @Operation(summary = "Reset password with token", description = "Reset user password using the reset token from email")
+    @ApiResponse(responseCode = "200", description = "Password reset successfully")
+    @ApiResponse(responseCode = "400", description = "Invalid or expired token")
+    public ResponseEntity<?> resetPassword(@org.springframework.web.bind.annotation.RequestBody PasswordResetConfirm request) {
+        AuthResponse response = authService.resetPassword(request);
+        if (response.getError()) {
+            return ResponseEntity.badRequest().body(response);
+        }
+        return ResponseEntity.ok(response);
+    }
+
+    /**
+     * Validate reset token
+     * GET /api/auth/validate-reset-token?token=...
+     */
+    @GetMapping("/validate-reset-token")
+    @Operation(summary = "Validate reset token", description = "Check if a password reset token is valid and not expired")
+    @ApiResponse(responseCode = "200", description = "Token is valid")
+    @ApiResponse(responseCode = "400", description = "Token is invalid or expired")
+    public ResponseEntity<?> validateResetToken(@RequestParam String token) {
+        AuthResponse response = authService.validateResetToken(token);
         if (response.getError()) {
             return ResponseEntity.badRequest().body(response);
         }
