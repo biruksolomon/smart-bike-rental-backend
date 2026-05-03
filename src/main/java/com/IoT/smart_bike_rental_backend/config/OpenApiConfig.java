@@ -40,6 +40,12 @@ public class OpenApiConfig {
                 .url("http://16.171.65.18")
                 .description("Cloud Dev server")
         );
+        servers.add(new Server()
+                .url("https://016c-196-188-188-143.ngrok-free.app")
+                .description("Ngrok Dev Server")
+
+        );
+
 
 
      /*   servers.add(new Server()
