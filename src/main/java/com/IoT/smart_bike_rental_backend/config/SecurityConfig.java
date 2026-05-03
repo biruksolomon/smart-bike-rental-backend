@@ -61,6 +61,8 @@ public class SecurityConfig {
                         .requestMatchers("/test.html").permitAll()
                         // Public authentication endpoints
                         .requestMatchers("/api/auth/register", "/api/auth/login", "/api/auth/validate").permitAll()
+                        // Public password reset endpoints
+                        .requestMatchers("/api/auth/forgot-password", "/api/auth/reset-password", "/api/auth/validate-reset-code").permitAll()
                         // Public bike listing
                         .requestMatchers(HttpMethod.GET, "/api/bikes", "/api/bikes/**").permitAll()
                         // All other requests require authentication

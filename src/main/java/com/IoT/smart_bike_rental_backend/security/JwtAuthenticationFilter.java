@@ -21,9 +21,9 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
             throws ServletException, IOException {
-        // Skip JWT validation for Swagger/OpenAPI endpoints
+        // Skip JWT validation for Swagger/OpenAPI and public endpoints
         String requestPath = request.getRequestURI();
-        if (isSwaggerPath(requestPath)) {
+        if (isPublicPath(requestPath)) {
             filterChain.doFilter(request, response);
             return;
         }
@@ -49,8 +49,9 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         filterChain.doFilter(request, response);
     }
 
-    private boolean isSwaggerPath(String requestPath) {
-        return requestPath.startsWith("/swagger-ui") ||
+    private boolean isPublicPath(String requestPath) {
+        // Swagger/OpenAPI endpoints
+        if (requestPath.startsWith("/swagger-ui") ||
                 requestPath.startsWith("/v3/api-docs") ||
                 requestPath.startsWith("/swagger-resources") ||
                 requestPath.startsWith("/webjars") ||
@@ -58,7 +59,26 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 requestPath.equals("/swagger-ui/index.html") ||
                 requestPath.equals("/favicon.ico") ||
                 requestPath.equals("/test.html") ||
-                requestPath.equals("/index.html");
+                requestPath.equals("/index.html")) {
+            return true;
+        }
+
+        // Public authentication endpoints
+        if (requestPath.equals("/api/auth/register") ||
+                requestPath.equals("/api/auth/login") ||
+                requestPath.equals("/api/auth/validate") ||
+                requestPath.equals("/api/auth/forgot-password") ||
+                requestPath.equals("/api/auth/reset-password") ||
+                requestPath.equals("/api/auth/validate-reset-code")) {
+            return true;
+        }
+
+        // Public bike listing endpoints
+        if (requestPath.startsWith("/api/bikes") && !requestPath.matches(".*/api/bikes/\\d+/(book|return|details).*")) {
+            return true;
+        }
+
+        return false;
     }
 
     private String getJwtFromRequest(HttpServletRequest request) {
