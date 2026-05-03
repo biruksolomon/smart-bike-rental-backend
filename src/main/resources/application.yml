@@ -1,6 +1,6 @@
 
 server:
-  port: 7080
+  port: 9080
 spring:
 
   application:

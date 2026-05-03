@@ -1,11 +1,6 @@
 package com.IoT.smart_bike_rental_backend.controller;
 
-import com.IoT.smart_bike_rental_backend.dto.AuthRequest;
-import com.IoT.smart_bike_rental_backend.dto.AuthResponse;
-import com.IoT.smart_bike_rental_backend.dto.PasswordResetConfirm;
-import com.IoT.smart_bike_rental_backend.dto.PasswordResetRequest;
-import com.IoT.smart_bike_rental_backend.dto.TokenValidationResponse;
-import com.IoT.smart_bike_rental_backend.dto.UserProfileResponse;
+import com.IoT.smart_bike_rental_backend.dto.*;
 import com.IoT.smart_bike_rental_backend.service.AuthService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -49,7 +44,7 @@ public class AuthController {
     @Operation(summary = "User login", description = "Authenticate user with email and password")
     @ApiResponse(responseCode = "200", description = "Login successful, returns JWT token")
     @ApiResponse(responseCode = "401", description = "Invalid credentials")
-    public ResponseEntity<?> login(@org.springframework.web.bind.annotation.RequestBody AuthRequest request) {
+    public ResponseEntity<?> login(@org.springframework.web.bind.annotation.RequestBody LoginRequest request) {
         AuthResponse response = authService.login(request.getEmail(), request.getPassword());
         if (response.getError()) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(response);
