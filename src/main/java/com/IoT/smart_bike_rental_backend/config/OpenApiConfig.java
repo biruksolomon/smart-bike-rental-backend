@@ -47,15 +47,6 @@ public class OpenApiConfig {
         );
 
 
-
-     /*   servers.add(new Server()
-                .url("https://api.skegmarket.com")
-                .description("Production Server"));
-
-        servers.add(new Server()
-                .url("https://staging-api.skegmarket.com")
-                .description("Staging Server"));*/
-
         return new OpenAPI()
                 .info(new Info()
                         .title(appName + " API")
