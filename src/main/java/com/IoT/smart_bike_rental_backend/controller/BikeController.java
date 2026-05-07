@@ -1,111 +1,230 @@
 package com.IoT.smart_bike_rental_backend.controller;
 
+import com.IoT.smart_bike_rental_backend.dto.ApiResponse;
+import com.IoT.smart_bike_rental_backend.dto.BikeStatusResponse;
 import com.IoT.smart_bike_rental_backend.model.Bike;
-import com.IoT.smart_bike_rental_backend.repository.Bikerepository;
 import com.IoT.smart_bike_rental_backend.service.BikeService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
-import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-import java.time.LocalDateTime;
+import java.util.List;
 
 @RestController
 @RequestMapping("/api/bikes")
 @RequiredArgsConstructor
 @Tag(name = "Bikes", description = "Bike management and control endpoints")
+@Slf4j
 public class BikeController {
 
     private final BikeService bikeService;
-    private final Bikerepository bikeRepository;
 
     /**
-     * Create a new bike
-     * POST /api/bikes?bikeId=...&qrCode=...
+     * Create a new bike in the system
      */
     @PostMapping
-    @Operation(summary = "Create a new bike", description = "Add a new bike to the rental system")
-    @ApiResponse(responseCode = "200", description = "Bike created successfully")
-    @ApiResponse(responseCode = "400", description = "Invalid bike ID or duplicate bike")
-    public Bike createBike(@RequestParam String bikeId,
-                           @RequestParam(required = false) String qrCode) {
-
-        Bike bike = new Bike();
-        bike.setBikeId(bikeId);
-        bike.setQrCode(qrCode != null ? qrCode : bikeId); // Default to bikeId if qrCode not provided
-        bike.setStatus("LOCKED");
-        bike.setLastUpdated(LocalDateTime.now());
-
-        return bikeRepository.save(bike);
+    @Operation(
+            summary = "Create a new bike",
+            description = "Register a new bike in the rental system with a unique bike ID and QR code"
+    )
+    @ApiResponses(value = {
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Bike created successfully"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "400", description = "Bike ID already exists")
+    })
+    public ResponseEntity<?> createBike(
+            @RequestParam String bikeId,
+            @RequestParam(required = false) String qrCode) {
+        try {
+            Bike bike = bikeService.createBike(bikeId, qrCode);
+            return ResponseEntity.ok(ApiResponse.success("Bike created successfully", bike));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest()
+                    .body(ApiResponse.error(e.getMessage()));
+        }
     }
 
     /**
-     * Get bike by ID
-     * GET /api/bikes/{bikeId}
+     * Get bike status by bike ID
      */
     @GetMapping("/{bikeId}")
-    @Operation(summary = "Get bike details", description = "Retrieve bike information by bike ID")
-    @ApiResponse(responseCode = "200", description = "Bike found")
-    @ApiResponse(responseCode = "404", description = "Bike not found")
+    @Operation(
+            summary = "Get bike details",
+            description = "Retrieve bike status and information by bike ID"
+    )
     public ResponseEntity<?> getBike(@PathVariable String bikeId) {
-        var bike = bikeRepository.findByBikeId(bikeId);
-        if (bike.isEmpty()) {
+        try {
+            BikeStatusResponse status = bikeService.getBikeStatus(bikeId);
+            return ResponseEntity.ok(ApiResponse.success("Bike found", status));
+        } catch (IllegalArgumentException e) {
             return ResponseEntity.notFound().build();
         }
-        return ResponseEntity.ok(bike.get());
+    }
+
+    /**
+     * Get bike status by QR code (used when scanning)
+     */
+    @GetMapping("/qr/{qrCode}")
+    @Operation(
+            summary = "Get bike by QR code",
+            description = "Retrieve bike status by scanning QR code - used by mobile app before starting ride"
+    )
+    public ResponseEntity<?> getBikeByQrCode(@PathVariable String qrCode) {
+        try {
+            BikeStatusResponse status = bikeService.getBikeStatusByQrCode(qrCode);
+            return ResponseEntity.ok(ApiResponse.success("Bike found", status));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.notFound().build();
+        }
     }
 
     /**
      * Get all bikes
-     * GET /api/bikes
      */
     @GetMapping
-    @Operation(summary = "Get all bikes", description = "Retrieve list of all bikes in the system")
-    @ApiResponse(responseCode = "200", description = "List of bikes returned")
+    @Operation(
+            summary = "Get all bikes",
+            description = "Retrieve list of all bikes in the system"
+    )
     public ResponseEntity<?> getAllBikes() {
-        return ResponseEntity.ok(bikeRepository.findAll());
+        List<BikeStatusResponse> bikes = bikeService.getAllBikes();
+        return ResponseEntity.ok(ApiResponse.success("Bikes retrieved", bikes));
     }
 
     /**
-     * Unlock a bike via MQTT
-     * POST /api/bikes/{bikeId}/unlock
+     * Get all available bikes
+     */
+    @GetMapping("/available")
+    @Operation(
+            summary = "Get available bikes",
+            description = "Retrieve list of all bikes that are available for rental (LOCKED status and usable)"
+    )
+    public ResponseEntity<?> getAvailableBikes() {
+        List<BikeStatusResponse> bikes = bikeService.getAvailableBikes();
+        return ResponseEntity.ok(ApiResponse.success("Available bikes retrieved", bikes));
+    }
+
+    /**
+     * Update bike location
+     */
+    @PutMapping("/{bikeId}/location")
+    @Operation(
+            summary = "Update bike location",
+            description = "Update GPS coordinates for a bike (called by ESP32 or admin)"
+    )
+    @SecurityRequirement(name = "bearerAuth")
+    public ResponseEntity<?> updateLocation(
+            @PathVariable String bikeId,
+            @RequestParam Double latitude,
+            @RequestParam Double longitude) {
+        try {
+            Bike bike = bikeService.updateBikeLocation(bikeId, latitude, longitude);
+            return ResponseEntity.ok(ApiResponse.success("Location updated", BikeStatusResponse.fromBike(bike)));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.notFound().build();
+        }
+    }
+
+    /**
+     * Update bike battery level
+     */
+    @PutMapping("/{bikeId}/battery")
+    @Operation(
+            summary = "Update bike battery",
+            description = "Update battery level for a bike (called by ESP32)"
+    )
+    @SecurityRequirement(name = "bearerAuth")
+    public ResponseEntity<?> updateBattery(
+            @PathVariable String bikeId,
+            @RequestParam Integer batteryLevel) {
+        try {
+            Bike bike = bikeService.updateBikeBattery(bikeId, batteryLevel);
+            return ResponseEntity.ok(ApiResponse.success("Battery level updated", BikeStatusResponse.fromBike(bike)));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.notFound().build();
+        }
+    }
+
+    /**
+     * Set bike maintenance status
+     */
+    @PutMapping("/{bikeId}/maintenance")
+    @Operation(
+            summary = "Set maintenance status",
+            description = "Mark bike as usable or under maintenance"
+    )
+    @SecurityRequirement(name = "bearerAuth")
+    public ResponseEntity<?> setMaintenanceStatus(
+            @PathVariable String bikeId,
+            @RequestParam boolean isUsable) {
+        try {
+            Bike bike = bikeService.setBikeMaintenanceStatus(bikeId, isUsable);
+            return ResponseEntity.ok(ApiResponse.success(
+                    isUsable ? "Bike marked as usable" : "Bike marked for maintenance",
+                    BikeStatusResponse.fromBike(bike)));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.notFound().build();
+        }
+    }
+
+    /**
+     * Send direct unlock command (admin/emergency use)
+     * Note: For normal rides, use /api/rides/start instead
      */
     @PostMapping("/{bikeId}/unlock")
-    @Operation(summary = "Unlock a bike", description = "Send MQTT unlock command to bike")
+    @Operation(
+            summary = "Direct unlock (admin)",
+            description = "Send direct UNLOCK command to bike via MQTT. For normal rides, use /api/rides/start instead."
+    )
     @SecurityRequirement(name = "bearerAuth")
-    @ApiResponse(responseCode = "200", description = "Unlock command sent successfully")
-    @ApiResponse(responseCode = "400", description = "Failed to send unlock command")
     public ResponseEntity<?> unlock(@PathVariable String bikeId) {
         try {
-            bikeService.unlockBike(bikeId);
-            return ResponseEntity.ok("Unlock command sent");
+            bikeService.sendUnlockCommand(bikeId);
+            return ResponseEntity.ok(ApiResponse.success("Unlock command sent", null));
         } catch (Exception e) {
-            return ResponseEntity.badRequest().body("Failed to send unlock command: " + e.getMessage());
+            log.error("Failed to unlock bike {}: {}", bikeId, e.getMessage());
+            return ResponseEntity.badRequest()
+                    .body(ApiResponse.error("Failed to send unlock command: " + e.getMessage()));
         }
     }
 
     /**
-     * Lock a bike via MQTT
-     * POST /api/bikes/{bikeId}/lock
+     * Send direct lock command (admin/emergency use)
+     * Note: For normal rides, use /api/rides/end instead
      */
     @PostMapping("/{bikeId}/lock")
-    @Operation(summary = "Lock a bike", description = "Send MQTT lock command to bike")
+    @Operation(
+            summary = "Direct lock (admin)",
+            description = "Send direct LOCK command to bike via MQTT. For normal rides, use /api/rides/end instead."
+    )
     @SecurityRequirement(name = "bearerAuth")
-    @ApiResponse(responseCode = "200", description = "Lock command sent successfully")
-    @ApiResponse(responseCode = "400", description = "Failed to send lock command")
     public ResponseEntity<?> lock(@PathVariable String bikeId) {
         try {
-            bikeService.lockBike(bikeId);
-            return ResponseEntity.ok("Lock command sent");
+            bikeService.sendLockCommand(bikeId);
+            return ResponseEntity.ok(ApiResponse.success("Lock command sent", null));
         } catch (Exception e) {
-            return ResponseEntity.badRequest().body("Failed to send lock command: " + e.getMessage());
+            log.error("Failed to lock bike {}: {}", bikeId, e.getMessage());
+            return ResponseEntity.badRequest()
+                    .body(ApiResponse.error("Failed to send lock command: " + e.getMessage()));
         }
     }
+
+    /**
+     * Receive status update from bike (ESP32 callback)
+     */
+    @PostMapping("/{bikeId}/status")
+    @Operation(
+            summary = "Receive status update",
+            description = "Endpoint for ESP32 to report status updates (alternative to MQTT)"
+    )
+    public ResponseEntity<?> receiveStatusUpdate(
+            @PathVariable String bikeId,
+            @RequestBody String status) {
+        bikeService.processStatusUpdate(bikeId, status);
+        return ResponseEntity.ok(ApiResponse.success("Status update processed", null));
+    }
 }
-
-
-
-
