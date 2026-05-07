@@ -2,7 +2,8 @@ package com.IoT.smart_bike_rental_backend.config;
 
 import io.swagger.v3.oas.models.*;
 import io.swagger.v3.oas.models.info.*;
-import io.swagger.v3.oas.models.security.*;
+import io.swagger.v3.oas.models.security.SecurityRequirement;
+import io.swagger.v3.oas.models.security.SecurityScheme;
 import io.swagger.v3.oas.models.servers.Server;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -47,6 +48,7 @@ public class OpenApiConfig {
         );
 
 
+
         return new OpenAPI()
                 .info(new Info()
                         .title(appName + " API")
@@ -60,7 +62,8 @@ public class OpenApiConfig {
                                 .url("https://opensource.org/licenses/MIT")))
                 .servers(servers)
                 .components(new Components()
-                        .addSecuritySchemes("Bearer Authentication", createBearerAuthScheme()));
+                        .addSecuritySchemes("bearerAuth", createBearerAuthScheme()))
+                .addSecurityItem(new SecurityRequirement().addList("bearerAuth"));
     }
 
     private SecurityScheme createBearerAuthScheme() {
