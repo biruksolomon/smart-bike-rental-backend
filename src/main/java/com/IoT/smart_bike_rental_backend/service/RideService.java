@@ -1,5 +1,8 @@
 package com.IoT.smart_bike_rental_backend.service;
 
+import com.IoT.smart_bike_rental_backend.dto.EndRideRequest;
+import com.IoT.smart_bike_rental_backend.dto.RideResponse;
+import com.IoT.smart_bike_rental_backend.dto.StartRideRequest;
 import com.IoT.smart_bike_rental_backend.model.Bike;
 import com.IoT.smart_bike_rental_backend.model.Ride;
 import com.IoT.smart_bike_rental_backend.model.User;
@@ -8,14 +11,18 @@ import com.IoT.smart_bike_rental_backend.repository.Bikerepository;
 import com.IoT.smart_bike_rental_backend.repository.Riderepository;
 import com.IoT.smart_bike_rental_backend.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class RideService {
 
     private final Riderepository rideRepository;
@@ -23,93 +30,227 @@ public class RideService {
     private final UserRepository userRepository;
     private final MqttService mqttService;
 
+    // Pricing configuration
     private static final Double PRICE_PER_MINUTE = 0.5;
+    private static final Double MINIMUM_CHARGE = 1.0;
 
-    public Ride startRide(Long userId, String qrCode) {
-        // Validate user exists
-        User user = userRepository.findById(userId)
-                .orElseThrow(() -> new IllegalArgumentException("User not found"));
+    /**
+     * Start a new ride - Full flow per the system diagram:
+     * 1. Receive QR code from mobile app
+     * 2. Simulate payment (always succeeds for now)
+     * 3. Fetch bike status
+     * 4. Check if bike is usable
+     * 5. If yes, send UNLOCK command via MQTT
+     * 6. Create ride record
+     */
+    @Transactional
+    public RideResponse startRide(StartRideRequest request) {
+        log.info("Starting ride for user {} with QR code {}", request.getUserId(), request.getQrCode());
 
-        // Validate bike exists with QR code
-        Bike bike = bikeRepository.findByQrCode(qrCode)
-                .orElseThrow(() -> new IllegalArgumentException("Bike not found"));
+        // Step 1: Validate user exists
+        User user = userRepository.findById(request.getUserId())
+                .orElseThrow(() -> new IllegalArgumentException("User not found with ID: " + request.getUserId()));
 
-        // Validate bike is available (LOCKED status)
-        if (!"LOCKED".equals(bike.getStatus())) {
-            throw new IllegalArgumentException("Bike is not available for rent");
+        // Check if user already has an active ride
+        Optional<Ride> existingRide = rideRepository.findByUserAndActiveTrue(user);
+        if (existingRide.isPresent()) {
+            throw new IllegalStateException("User already has an active ride. Please end your current ride first.");
         }
 
-        // Create ride record
+        // Step 2: Simulate payment (always succeeds)
+        boolean paymentSuccess = simulatePayment(user);
+        if (!paymentSuccess) {
+            throw new IllegalStateException("Payment simulation failed");
+        }
+        log.info("Payment simulated successfully for user {}", user.getEmail());
+
+        // Step 3: Fetch bike status by QR code
+        Bike bike = bikeRepository.findByQrCode(request.getQrCode())
+                .orElseThrow(() -> new IllegalArgumentException("Bike not found with QR code: " + request.getQrCode()));
+
+        log.info("Bike found: {} with status {}", bike.getBikeId(), bike.getStatus());
+
+        // Step 4: Check if bike is usable
+        if (!bike.isAvailable()) {
+            String reason = "IN_USE".equals(bike.getStatus())
+                    ? "Bike is currently in use by another user"
+                    : !Boolean.TRUE.equals(bike.getIsUsable())
+                      ? "Bike is under maintenance or not usable"
+                      : "Bike is not available";
+            throw new IllegalStateException(reason);
+        }
+
+        // Step 5: Create ride record
         Ride ride = new Ride();
         ride.setUser(user);
         ride.setBike(bike);
         ride.setStartTime(LocalDateTime.now());
         ride.setActive(true);
         ride.setCost(0.0);
+        ride.setPaymentStatus("AUTHORIZED");
+        ride.setStartLatitude(request.getStartLatitude());
+        ride.setStartLongitude(request.getStartLongitude());
 
         Ride savedRide = rideRepository.save(ride);
+        log.info("Ride record created with ID {}", savedRide.getId());
 
-        // Update bike status to IN_USE and set current user
+        // Step 6: Update bike status to IN_USE
         bike.setStatus("IN_USE");
         bike.setCurrentUser(user);
+        bike.setLastUpdated(LocalDateTime.now());
         bikeRepository.save(bike);
 
-        // Send MQTT command to ESP32 to unlock bike
-        try {
-            mqttService.publish("bike/" + bike.getBikeId() + "/command", "UNLOCK");
-        } catch (Exception e) {
-            System.err.println("Failed to send unlock command: " + e.getMessage());
-        }
+        // Step 7: Send MQTT command to ESP32 to unlock bike
+        sendUnlockCommand(bike.getBikeId());
 
-        return savedRide;
+        return RideResponse.fromRide(savedRide, "Ride started successfully. Bike unlocked.");
     }
 
-    public Ride endRide(Long rideId) {
+    /**
+     * End a ride - Full flow per the system diagram:
+     * 1. Send LOCK command via MQTT
+     * 2. Compute ride cost and duration
+     * 3. Store ride data
+     * 4. Update bike status
+     */
+    @Transactional
+    public RideResponse endRide(EndRideRequest request) {
+        log.info("Ending ride with ID {}", request.getRideId());
+
         // Find active ride
-        Ride ride = rideRepository.findById(rideId)
-                .orElseThrow(() -> new IllegalArgumentException("Ride not found"));
+        Ride ride = rideRepository.findById(request.getRideId())
+                .orElseThrow(() -> new IllegalArgumentException("Ride not found with ID: " + request.getRideId()));
 
         if (!ride.isActive()) {
-            throw new IllegalArgumentException("Ride is already completed");
+            throw new IllegalStateException("Ride is already completed");
         }
 
-        // Set end time and calculate cost
+        // Set end time
         ride.setEndTime(LocalDateTime.now());
         ride.setActive(false);
+        ride.setEndLatitude(request.getEndLatitude());
+        ride.setEndLongitude(request.getEndLongitude());
 
-        long minutes = Duration.between(ride.getStartTime(), ride.getEndTime()).toMinutes();
-        double cost = minutes * PRICE_PER_MINUTE;
+        // Calculate duration in minutes
+        long durationMinutes = Duration.between(ride.getStartTime(), ride.getEndTime()).toMinutes();
+        ride.setDurationMinutes(durationMinutes);
+
+        // Calculate cost (minimum charge applies)
+        double cost = Math.max(durationMinutes * PRICE_PER_MINUTE, MINIMUM_CHARGE);
         ride.setCost(cost);
+        ride.setPaymentStatus("COMPLETED");
 
         Ride savedRide = rideRepository.save(ride);
+        log.info("Ride {} completed. Duration: {} minutes, Cost: ${}",
+                savedRide.getId(), durationMinutes, cost);
 
         // Update bike status back to LOCKED
         Bike bike = ride.getBike();
         bike.setStatus("LOCKED");
         bike.setCurrentUser(null);
         bike.setLastUpdated(LocalDateTime.now());
+
+        // Update bike location if provided
+        if (request.getEndLatitude() != null && request.getEndLongitude() != null) {
+            bike.setLatitude(request.getEndLatitude());
+            bike.setLongitude(request.getEndLongitude());
+        }
+
         bikeRepository.save(bike);
 
         // Send MQTT command to ESP32 to lock bike
-        try {
-            mqttService.publish("bike/" + bike.getBikeId() + "/command", "LOCK");
-        } catch (Exception e) {
-            System.err.println("Failed to send lock command: " + e.getMessage());
-        }
+        sendLockCommand(bike.getBikeId());
 
-        return savedRide;
+        return RideResponse.fromRide(savedRide,
+                String.format("Ride completed. Duration: %d minutes. Total cost: $%.2f", durationMinutes, cost));
     }
 
+    /**
+     * End a ride by user ID (finds the active ride for the user)
+     */
+    @Transactional
+    public RideResponse endRideByUser(Long userId) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new IllegalArgumentException("User not found with ID: " + userId));
+
+        Ride ride = rideRepository.findByUserAndActiveTrue(user)
+                .orElseThrow(() -> new IllegalStateException("No active ride found for user"));
+
+        EndRideRequest request = new EndRideRequest();
+        request.setRideId(ride.getId());
+        return endRide(request);
+    }
+
+    /**
+     * Get the current active ride for a user
+     */
+    public Optional<RideResponse> getActiveRide(Long userId) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new IllegalArgumentException("User not found with ID: " + userId));
+
+        return rideRepository.findByUserAndActiveTrue(user)
+                .map(ride -> RideResponse.fromRide(ride, "Active ride found"));
+    }
+
+    /**
+     * Get ride history for a user
+     */
     public List<Ride> getUserRideHistory(Long userId) {
-        // Validate user exists
         userRepository.findById(userId)
-                .orElseThrow(() -> new IllegalArgumentException("User not found"));
+                .orElseThrow(() -> new IllegalArgumentException("User not found with ID: " + userId));
 
         return rideRepository.findByUserIdOrderByStartTimeDesc(userId);
     }
 
+    /**
+     * Get a specific ride by ID
+     */
     public Ride getRide(Long rideId) {
         return rideRepository.findById(rideId)
-                .orElseThrow(() -> new IllegalArgumentException("Ride not found"));
+                .orElseThrow(() -> new IllegalArgumentException("Ride not found with ID: " + rideId));
+    }
+
+    /**
+     * Simulate payment - In production, integrate with payment gateway
+     * For now, always returns true (payment successful)
+     */
+    private boolean simulatePayment(User user) {
+        log.info("Simulating payment for user: {}", user.getEmail());
+        // In production: Integrate with Stripe, PayPal, etc.
+        // For now, always return true (successful payment)
+        return true;
+    }
+
+    /**
+     * Send UNLOCK command to bike via MQTT
+     * Topic format: bike/{bikeId}/command
+     * Payload: UNLOCK
+     */
+    private void sendUnlockCommand(String bikeId) {
+        String topic = "bike/" + bikeId + "/command";
+        try {
+            mqttService.publish(topic, "UNLOCK");
+            log.info("UNLOCK command sent to topic: {}", topic);
+        } catch (Exception e) {
+            log.error("Failed to send UNLOCK command to {}: {}", topic, e.getMessage());
+            // Don't throw - the ride is still valid even if MQTT fails
+            // The bike might unlock on retry or manual intervention
+        }
+    }
+
+    /**
+     * Send LOCK command to bike via MQTT
+     * Topic format: bike/{bikeId}/command
+     * Payload: LOCK
+     */
+    private void sendLockCommand(String bikeId) {
+        String topic = "bike/" + bikeId + "/command";
+        try {
+            mqttService.publish(topic, "LOCK");
+            log.info("LOCK command sent to topic: {}", topic);
+        } catch (Exception e) {
+            log.error("Failed to send LOCK command to {}: {}", topic, e.getMessage());
+            // Don't throw - the ride is still completed even if MQTT fails
+        }
     }
 }
