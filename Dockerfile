@@ -32,10 +32,10 @@ RUN chown -R appuser:appuser /app
 USER appuser
 
 # Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-    CMD wget -q -O- http://localhost:9080/actuator/health || exit 1
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=5 \
+    CMD wget -q -O- http://localhost:${PORT:-9080}/actuator/health || exit 1
 
-# Expose port
+# Dynamic port (will be overridden by Render)
 EXPOSE 9080
 
 # Run application

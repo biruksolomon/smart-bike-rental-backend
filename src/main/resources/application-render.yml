@@ -1,38 +1,40 @@
 server:
-  port: ${PORT:9080}
+  port: ${PORT:8080}
+  servlet:
+    context-path: /
 
 spring:
   application:
     name: smart-bike
     version: 1
     description: WiFi-based Smart Bike Rental Backend
-    base-url: http://app:9080
 
   datasource:
-    url: jdbc:mysql://mysql:3306/smartbike?createDatabaseIfNotExist=true&useSSL=false&serverTimezone=UTC
-    username: root
-    password: ${SPRING_DATASOURCE_PASSWORD}
+    url: ${DATABASE_URL}
+    username: ${DB_USER}
+    password: ${DB_PASSWORD}
     hikari:
-      maximum-pool-size: 10
-      minimum-idle: 5
-      connection-timeout: 30000
+      maximum-pool-size: 5
+      minimum-idle: 2
+      connection-timeout: 20000
+      idle-timeout: 300000
+      max-lifetime: 1200000
 
   jpa:
     hibernate:
-      ddl-auto: update
+      ddl-auto: validate
     show-sql: false
     properties:
       hibernate:
         dialect: org.hibernate.dialect.MySQL8Dialect
         format_sql: true
-        use_sql_comments: true
 
   mail:
-    host: ${SPRING_MAIL_HOST:smtp.gmail.com}
-    port: ${SPRING_MAIL_PORT:587}
-    username: ${SPRING_MAIL_USERNAME}
-    password: ${SPRING_MAIL_PASSWORD}
-    from: ${SPRING_MAIL_FROM:noreply@smartbike.com}
+    host: ${MAIL_HOST:smtp.gmail.com}
+    port: ${MAIL_PORT:587}
+    username: ${MAIL_USERNAME}
+    password: ${MAIL_PASSWORD}
+    from: ${MAIL_FROM:noreply@smartbike.com}
     properties:
       mail:
         smtp:
@@ -47,7 +49,7 @@ spring:
   security:
     user:
       name: admin
-      password: admin123
+      password: ${ADMIN_PASSWORD:admin123}
 
 admin:
   email: ${ADMIN_EMAIL:admin@smartbike.com}
@@ -56,8 +58,8 @@ admin:
   phone: ${ADMIN_PHONE:+1234567890}
 
 mqtt:
-  broker: ${MQTT_BROKER:tcp://mqtt:1883}
-  client-id: ${MQTT_CLIENT_ID:spring-backend-docker}
+  broker: ${MQTT_BROKER:tcp://localhost:1883}
+  client-id: ${MQTT_CLIENT_ID:spring-backend-render}
   connection:
     timeout: 30
     keepalive: 60
@@ -66,7 +68,7 @@ mqtt:
     delay: 5000
 
 jwt:
-  secret: ${JWT_SECRET:mySecretKeyForSmartBikeRentalApplicationWithMinimum256BitsLength}
+  secret: ${JWT_SECRET}
   expiration: ${JWT_EXPIRATION:86400000}
 
 springdoc:
@@ -78,7 +80,7 @@ springdoc:
     enabled: true
     operations-sorter: method
     tags-sorter: alpha
-    try-it-out-enabled: true
+    try-it-out-enabled: false
     filter: true
     doc-expansion: list
   packages-to-scan: com.IoT.smart_bike_rental_backend.controller
@@ -89,18 +91,20 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info
+        include: health,info,metrics
   endpoint:
     health:
-      show-details: when-authorized
+      show-details: always
+  health:
+    livenessState:
+      enabled: true
+    readinessState:
+      enabled: true
 
 logging:
   level:
-    root: INFO
+    root: WARN
     com:
       IoT:
-        smart_bike_rental_backend: DEBUG
-  file:
-    name: /app/logs/application.log
-    max-size: 10MB
-    max-history: 10
+        smart_bike_rental_backend: INFO
+  format: "%d{ISO8601} %msg%n"
