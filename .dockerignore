@@ -1,0 +1,17 @@
+target/
+.git/
+.gitignore
+.idea/
+*.iml
+*.iws
+*.ipr
+.DS_Store
+.env
+.env.local
+*.log
+node_modules/
+docs/
+README.md
+LICENSE
+.vscode/
+*.md

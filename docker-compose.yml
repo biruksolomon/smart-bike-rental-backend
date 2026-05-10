@@ -1,0 +1,100 @@
+version: '3.8'
+
+services:
+  # MySQL Database
+  mysql:
+    image: mysql:8.0-alpine
+    container_name: smart-bike-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: 837535Abc@
+      MYSQL_DATABASE: smartbike
+      MYSQL_USER: smartbike_user
+      MYSQL_PASSWORD: smartbike_pass
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p837535Abc@"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - smart-bike-network
+    restart: unless-stopped
+
+  # MQTT Broker (Mosquitto)
+  mqtt:
+    image: eclipse-mosquitto:latest
+    container_name: smart-bike-mqtt
+    ports:
+      - "1883:1883"
+      - "9001:9001"
+    volumes:
+      - mosquitto_config:/mosquitto/config
+      - mosquitto_data:/mosquitto/data
+      - mosquitto_logs:/mosquitto/log
+    environment:
+      - TZ=UTC
+    networks:
+      - smart-bike-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "mosquitto_sub", "-h", "localhost", "-t", "test/topic", "-C", "1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Spring Boot Application
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: smart-bike-app
+    depends_on:
+      mysql:
+        condition: service_healthy
+      mqtt:
+        condition: service_healthy
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/smartbike?createDatabaseIfNotExist=true&useSSL=false&serverTimezone=UTC
+      SPRING_DATASOURCE_USERNAME: root
+      SPRING_DATASOURCE_PASSWORD: 837535Abc@
+      SPRING_JPA_HIBERNATE_DDL_AUTO: update
+      SPRING_MAIL_HOST: smtp.gmail.com
+      SPRING_MAIL_PORT: 587
+      SPRING_MAIL_USERNAME: ${MAIL_USERNAME}
+      SPRING_MAIL_PASSWORD: ${MAIL_PASSWORD}
+      SPRING_MAIL_FROM: noreply@smartbike.com
+      MQTT_BROKER: tcp://mqtt:1883
+      MQTT_CLIENT_ID: spring-backend-docker
+      JWT_SECRET: mySecretKeyForSmartBikeRentalApplicationWithMinimum256BitsLength
+      JWT_EXPIRATION: 86400000
+      ADMIN_EMAIL: admin@smartbike.com
+      ADMIN_PASSWORD: Admin@123
+      ADMIN_NAME: System Administrator
+      ADMIN_PHONE: "+1234567890"
+      SERVER_PORT: 9080
+    ports:
+      - "9080:9080"
+    volumes:
+      - ./logs:/app/logs
+    networks:
+      - smart-bike-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O-", "http://localhost:9080/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+volumes:
+  mysql_data:
+  mosquitto_config:
+  mosquitto_data:
+  mosquitto_logs:
+
+networks:
+  smart-bike-network:
+    driver: bridge
