@@ -4,6 +4,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.persistence.*;
 import lombok.Data;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 @Entity
@@ -28,7 +29,8 @@ public class Ride {
     private LocalDateTime startTime;
     private LocalDateTime endTime;
 
-    private Double cost;
+    @Column(precision = 10, scale = 2)
+    private BigDecimal cost;
 
     // Duration in minutes (calculated field)
     private Long durationMinutes;

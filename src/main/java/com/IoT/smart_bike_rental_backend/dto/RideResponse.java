@@ -6,6 +6,7 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 @Data
@@ -22,11 +23,15 @@ public class RideResponse {
     private LocalDateTime startTime;
     private LocalDateTime endTime;
     private Long durationMinutes;
-    private Double cost;
+    private BigDecimal cost;
     private String paymentStatus;
     private boolean active;
     private String bikeStatus;
     private String message;
+
+    public static RideResponse fromRide(Ride ride) {
+        return fromRide(ride, null);
+    }
 
     public static RideResponse fromRide(Ride ride, String message) {
         return RideResponse.builder()

@@ -36,7 +36,12 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 String email = jwtTokenProvider.getEmailFromToken(jwt);
                 String role = jwtTokenProvider.getRoleFromToken(jwt);
 
-                // Create authentication token
+                // Set request attributes for use in controllers
+                request.setAttribute("userId", Long.parseLong(userId));
+                request.setAttribute("email", email);
+                request.setAttribute("role", role);
+
+                // Create authentication token with role as authority
                 Authentication authentication = new UsernamePasswordAuthenticationToken(
                         email, null, new ArrayList<>()
                 );

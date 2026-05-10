@@ -15,6 +15,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -31,8 +32,8 @@ public class RideService {
     private final MqttService mqttService;
 
     // Pricing configuration
-    private static final Double PRICE_PER_MINUTE = 0.5;
-    private static final Double MINIMUM_CHARGE = 1.0;
+    private static final BigDecimal PRICE_PER_MINUTE = new BigDecimal("0.15");
+    private static final BigDecimal MINIMUM_CHARGE = new BigDecimal("1.00");
 
     /**
      * Start a new ride - Full flow per the system diagram:
@@ -86,7 +87,7 @@ public class RideService {
         ride.setBike(bike);
         ride.setStartTime(LocalDateTime.now());
         ride.setActive(true);
-        ride.setCost(0.0);
+        ride.setCost(BigDecimal.ZERO);
         ride.setPaymentStatus("AUTHORIZED");
         ride.setStartLatitude(request.getStartLatitude());
         ride.setStartLongitude(request.getStartLongitude());
@@ -136,7 +137,10 @@ public class RideService {
         ride.setDurationMinutes(durationMinutes);
 
         // Calculate cost (minimum charge applies)
-        double cost = Math.max(durationMinutes * PRICE_PER_MINUTE, MINIMUM_CHARGE);
+        BigDecimal cost = PRICE_PER_MINUTE.multiply(BigDecimal.valueOf(durationMinutes));
+        if (cost.compareTo(MINIMUM_CHARGE) < 0) {
+            cost = MINIMUM_CHARGE;
+        }
         ride.setCost(cost);
         ride.setPaymentStatus("COMPLETED");
 
@@ -162,7 +166,7 @@ public class RideService {
         sendLockCommand(bike.getBikeId());
 
         return RideResponse.fromRide(savedRide,
-                String.format("Ride completed. Duration: %d minutes. Total cost: $%.2f", durationMinutes, cost));
+                String.format("Ride completed. Duration: %d minutes. Total cost: $%s", durationMinutes, cost.toString()));
     }
 
     /**

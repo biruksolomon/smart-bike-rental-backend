@@ -56,8 +56,9 @@ public class SecurityConfig {
                                 "/favicon.ico",
                                 "/error"
                         ).permitAll()
-                        // Static resources
+                        // Static resources and admin UI
                         .requestMatchers("/static/**").permitAll()
+                        .requestMatchers("/admin/**").permitAll()
                         .requestMatchers("/test.html").permitAll()
                         // Public authentication endpoints
                         .requestMatchers("/api/auth/register", "/api/auth/login", "/api/auth/validate").permitAll()

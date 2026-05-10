@@ -29,6 +29,9 @@ public class OpenApiConfig {
     @Value("${spring.application.base-url}")
     private String baseUrl;
 
+    @Value("\n\n\t Admin credentials(The Only Admin!) \n\n\t\tEmail: admin@smartbike.com  \n\n\t\tPassword: Admin@123")
+    private String AdminCredentials;
+
     @Bean
     public OpenAPI customOpenAPI() {
         List<Server> servers = new ArrayList<>();
@@ -53,7 +56,7 @@ public class OpenApiConfig {
                 .info(new Info()
                         .title(appName + " API")
                         .version(appVersion)
-                        .description(appDescription)
+                        .description(appDescription + AdminCredentials )
                         .contact(new Contact()
                                 .name(appName + " Development Team")
                                 .email("besot@tech.com"))

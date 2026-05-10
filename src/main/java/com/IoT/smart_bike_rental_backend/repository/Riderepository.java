@@ -26,4 +26,16 @@ public interface Riderepository extends JpaRepository<Ride, Long> {
 
    // Find rides by bike
    List<Ride> findByBikeOrderByStartTimeDesc(Bike bike);
+
+   // Find all active rides (endTime is null)
+   List<Ride> findByEndTimeIsNull();
+
+   // Find rides by user entity
+   List<Ride> findByUser(User user);
+
+   // Find active rides by user (no end time)
+   List<Ride> findByUserAndEndTimeIsNull(User user);
+
+   // Find rides by bike entity
+   List<Ride> findByBike(Bike bike);
 }
