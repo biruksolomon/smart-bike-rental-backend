@@ -8,6 +8,7 @@ import org.eclipse.paho.client.mqttv3.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Lazy;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
 /**
@@ -28,7 +29,9 @@ public class MqttService {
     private String clientId;
 
     private MqttClient client;
-    private boolean isConnected = false;
+    private volatile boolean isConnected = false;
+    private static final int MAX_RECONNECT_ATTEMPTS = 5;
+    private int reconnectAttempts = 0;
 
     @Value("${mqtt.username}")
     private String username;
@@ -43,23 +46,38 @@ public class MqttService {
 
     @PostConstruct
     public void init() {
+        // Connect asynchronously to avoid blocking Spring startup
+        connectAsync();
+    }
+
+    @Async
+    public void connectAsync() {
         try {
-            client = new MqttClient(broker, clientId);
+            Thread.sleep(2000); // Wait for Spring to fully initialize
+            client = new MqttClient(broker, clientId + "_" + System.currentTimeMillis());
 
             MqttConnectOptions options = new MqttConnectOptions();
             options.setAutomaticReconnect(true);
-            options.setCleanSession(true);
-            options.setConnectionTimeout(10);
-            options.setKeepAliveInterval(60);
+            options.setCleanSession(false); // Use persistent session to maintain subscriptions
+            options.setConnectionTimeout(30); // Increased timeout
+            options.setKeepAliveInterval(30); // Increased keep-alive interval
+            options.setMaxInflight(100);
             options.setUserName(username);
             options.setPassword(password.toCharArray());
+
+            // Enable SSL/TLS
+            options.setSocketFactory(
+                    javax.net.ssl.SSLContext.getDefault().getSocketFactory()
+            );
 
             // Set callback for handling incoming messages and connection events
             client.setCallback(new MqttCallback() {
                 @Override
                 public void connectionLost(Throwable cause) {
-                    log.warn("MQTT connection lost: {}", cause.getMessage());
+                    log.warn("MQTT connection lost: {}", cause.getMessage(), cause);
                     isConnected = false;
+                    // Attempt to reconnect with exponential backoff
+                    attemptReconnect();
                 }
 
                 @Override
@@ -75,15 +93,42 @@ public class MqttService {
 
             client.connect(options);
             isConnected = true;
-            log.info("Connected to MQTT broker at {}", broker);
+            reconnectAttempts = 0; // Reset on successful connection
+            log.info("Successfully connected to MQTT broker at {}", broker);
 
             // Subscribe to all bike status topics
             subscribeToStatusTopics();
 
         } catch (MqttException e) {
-            log.error("Failed to connect to MQTT broker: {}", e.getMessage());
-            // Don't throw exception - allow app to start without MQTT
+            log.error("Failed to connect to MQTT broker: {}", e.getMessage(), e);
             isConnected = false;
+            attemptReconnect();
+        } catch (InterruptedException e) {
+            log.error("MQTT initialization interrupted: {}", e.getMessage());
+            Thread.currentThread().interrupt();
+        } catch (Exception e) {
+            log.error("Unexpected error during MQTT initialization: {}", e.getMessage(), e);
+            isConnected = false;
+        }
+    }
+
+    /**
+     * Attempt to reconnect with exponential backoff
+     */
+    private void attemptReconnect() {
+        if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+            reconnectAttempts++;
+            long delayMs = Math.min(1000 * (long) Math.pow(2, reconnectAttempts - 1), 60000); // Max 60 seconds
+            log.info("Scheduling MQTT reconnection attempt {} in {}ms", reconnectAttempts, delayMs);
+
+            try {
+                Thread.sleep(delayMs);
+                connectAsync();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        } else {
+            log.error("Max MQTT reconnection attempts ({}) reached. Application will continue without MQTT.", MAX_RECONNECT_ATTEMPTS);
         }
     }
 
@@ -98,11 +143,12 @@ public class MqttService {
         }
 
         try {
-            // Subscribe to all bike status messages
+            // Subscribe to all bike status messages with QoS 1
             client.subscribe("bike/+/status", 1);
-            log.info("Subscribed to bike/+/status topic");
+            log.info("Successfully subscribed to bike/+/status topic");
         } catch (MqttException e) {
-            log.error("Failed to subscribe to status topics: {}", e.getMessage());
+            log.error("Failed to subscribe to status topics: {}", e.getMessage(), e);
+            isConnected = false;
         }
     }
 
@@ -110,23 +156,27 @@ public class MqttService {
      * Handle incoming MQTT messages from bikes
      */
     private void handleIncomingMessage(String topic, MqttMessage message) {
-        String payload = new String(message.getPayload());
-        log.info("Received MQTT message - Topic: {}, Payload: {}", topic, payload);
+        try {
+            String payload = new String(message.getPayload());
+            log.debug("Received MQTT message - Topic: {}, Payload: {}", topic, payload);
 
-        // Parse topic to extract bikeId
-        // Expected format: bike/{bikeId}/status
-        String[] parts = topic.split("/");
-        if (parts.length >= 3 && "bike".equals(parts[0]) && "status".equals(parts[2])) {
-            String bikeId = parts[1];
+            // Parse topic to extract bikeId
+            // Expected format: bike/{bikeId}/status
+            String[] parts = topic.split("/");
+            if (parts.length >= 3 && "bike".equals(parts[0]) && "status".equals(parts[2])) {
+                String bikeId = parts[1];
 
-            // Process the status update
-            if (bikeService != null) {
-                try {
-                    bikeService.processStatusUpdate(bikeId, payload);
-                } catch (Exception e) {
-                    log.error("Error processing status update for bike {}: {}", bikeId, e.getMessage());
+                // Process the status update asynchronously to avoid blocking MQTT callback
+                if (bikeService != null) {
+                    try {
+                        bikeService.processStatusUpdate(bikeId, payload);
+                    } catch (Exception e) {
+                        log.error("Error processing status update for bike {}: {}", bikeId, e.getMessage());
+                    }
                 }
             }
+        } catch (Exception e) {
+            log.error("Error handling incoming MQTT message: {}", e.getMessage(), e);
         }
     }
 
@@ -137,7 +187,7 @@ public class MqttService {
      * @param message The message payload (e.g., UNLOCK, LOCK)
      */
     public void publish(String topic, String message) {
-        if (!isConnected || client == null || !client.isConnected()) {
+        if (client == null || !client.isConnected()) {
             log.warn("MQTT client not connected, cannot publish message to {}", topic);
             return;
         }
@@ -148,9 +198,9 @@ public class MqttService {
             mqttMessage.setRetained(false);
 
             client.publish(topic, mqttMessage);
-            log.info("Published MQTT message - Topic: {}, Payload: {}", topic, message);
+            log.debug("Published MQTT message - Topic: {}, Payload: {}", topic, message);
         } catch (MqttException e) {
-            log.error("Failed to publish MQTT message to {}: {}", topic, e.getMessage());
+            log.error("Failed to publish MQTT message to {}: {}", topic, e.getMessage(), e);
         }
     }
 
@@ -172,17 +222,17 @@ public class MqttService {
      * Check if MQTT client is connected
      */
     public boolean isConnected() {
-        return isConnected && client != null && client.isConnected();
+        return client != null && client.isConnected();
     }
 
     /**
      * Get connection status message
      */
     public String getConnectionStatus() {
-        if (isConnected && client != null && client.isConnected()) {
+        if (client != null && client.isConnected()) {
             return "Connected to " + broker;
         } else {
-            return "Disconnected";
+            return "Disconnected from " + broker;
         }
     }
 
@@ -195,8 +245,10 @@ public class MqttService {
                     log.info("Disconnected from MQTT broker");
                 }
                 client.close();
+                isConnected = false;
+                log.info("MQTT client closed successfully");
             } catch (MqttException e) {
-                log.error("Error disconnecting MQTT client: {}", e.getMessage());
+                log.error("Error disconnecting MQTT client: {}", e.getMessage(), e);
             }
         }
     }

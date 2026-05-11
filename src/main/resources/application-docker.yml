@@ -58,7 +58,7 @@ admin:
 
 mqtt:
   broker: ssl://graycuckoo-7d8fe22a.a03.euc1.aws.hivemq.cloud:8883
-  client-id: spring-backend
+  client-id: smart-bike-spring-backend
 
   username: hivemq.webclient.1778502183752
   password: Q0V9xay,E#DM>hF:g18l
