@@ -48,8 +48,11 @@ admin:
   phone: "+1234567890"
 
 mqtt:
-  broker: tcp://localhost:1883
+  broker: ssl://graycuckoo-7d8fe22a.a03.euc1.aws.hivemq.cloud:8883
   client-id: spring-backend
+
+  username: hivemq.webclient.1778502183752
+  password: Q0V9xay,E#DM>hF:g18l
 
 jwt:
   secret: mySecretKeyForSmartBikeRentalApplicationWithMinimum256BitsLength

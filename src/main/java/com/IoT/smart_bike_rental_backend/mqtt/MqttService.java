@@ -30,6 +30,12 @@ public class MqttService {
     private MqttClient client;
     private boolean isConnected = false;
 
+    @Value("${mqtt.username}")
+    private String username;
+
+    @Value("${mqtt.password}")
+    private String password;
+
     // Using @Lazy to avoid circular dependency
     @Autowired
     @Lazy
@@ -45,6 +51,8 @@ public class MqttService {
             options.setCleanSession(true);
             options.setConnectionTimeout(10);
             options.setKeepAliveInterval(60);
+            options.setUserName(username);
+            options.setPassword(password.toCharArray());
 
             // Set callback for handling incoming messages and connection events
             client.setCallback(new MqttCallback() {
