@@ -41,7 +41,7 @@ public class OpenApiConfig {
                 .url(baseUrl )
                 .description("Local Development Server"));
         servers.add(new Server()
-                .url("http://16.171.65.18")
+                .url("https://smart-bike-rental-backend.onrender.com/")
                 .description("Cloud Dev server")
         );
         servers.add(new Server()

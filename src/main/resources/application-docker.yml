@@ -62,12 +62,7 @@ mqtt:
 
   username: hivemq.webclient.1778502183752
   password: Q0V9xay,E#DM>hF:g18l
-  connection:
-    timeout: 30
-    keepalive: 60
-  reconnect:
-    enabled: true
-    delay: 5000
+
 
 jwt:
   secret: ${JWT_SECRET:mySecretKeyForSmartBikeRentalApplicationWithMinimum256BitsLength}
