@@ -10,9 +10,9 @@ spring:
     description: WiFi-based Smart Bike Rental Backend
 
   datasource:
-    url: ${DATABASE_URL}
-    username: ${DB_USER}
-    password: ${DB_PASSWORD}
+    url: jdbc:postgresql://ep-summer-salad-aqlm9g8k-pooler.c-8.us-east-1.aws.neon.tech/neondb?sslmode=require
+    username: neondb_owner
+    password: npg_X4iqTO5aQkFj
     driver-class-name: org.postgresql.Driver
     hikari:
       maximum-pool-size: 5
