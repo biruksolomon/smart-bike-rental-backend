@@ -9,9 +9,10 @@ spring:
     base-url: http://app:9080
 
   datasource:
-    url: jdbc:mysql://mysql:3306/smartbike?createDatabaseIfNotExist=true&useSSL=false&serverTimezone=UTC
-    username: root
-    password: ${SPRING_DATASOURCE_PASSWORD}
+    url: ${DATABASE_URL:jdbc:postgresql://postgres:5432/smartbike}
+    username: ${DB_USER:postgres}
+    password: ${DB_PASSWORD:${SPRING_DATASOURCE_PASSWORD:}}
+    driver-class-name: org.postgresql.Driver
     hikari:
       maximum-pool-size: 10
       minimum-idle: 5
@@ -21,9 +22,9 @@ spring:
     hibernate:
       ddl-auto: update
     show-sql: false
+    database-platform: org.hibernate.dialect.PostgreSQLDialect
     properties:
       hibernate:
-        dialect: org.hibernate.dialect.MySQL8Dialect
         format_sql: true
         use_sql_comments: true
 
