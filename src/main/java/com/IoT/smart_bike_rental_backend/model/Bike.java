@@ -17,6 +17,14 @@ public class Bike {
     @Column(unique = true, nullable = false)
     private String bikeId;
 
+    // Bike type: BMX, Phoenix, Mountain, Road, Hybrid, etc.
+    @Column(nullable = false)
+    private String bikeType = "Mountain";
+
+    // Bike size: 16, 18, 20, 24, 26, 27.5, 29 (in inches)
+    @Column(nullable = false)
+    private String bikeSize = "26";
+
     // Status: LOCKED, IN_USE, MAINTENANCE, UNAVAILABLE
     private String status = "LOCKED";
 

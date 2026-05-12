@@ -7,7 +7,7 @@ spring:
     name: smart-bike
     version: 1
     description: Anonymous confession and advice platform backend
-    base-url: http://localhost:9080
+    base-url: http://localhost:7080
 
   mail:
     host: smtp.gmail.com
