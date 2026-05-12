@@ -206,7 +206,7 @@ public class AdminService {
      * Create a new bike
      */
     @Transactional
-    public BikeStatusResponse createBike(String bikeId, String qrCode, Double latitude, Double longitude) {
+    public BikeStatusResponse createBike(String bikeId, String qrCode, Double latitude, Double longitude, String bikeType, String bikeSize) {
         if (bikeRepository.findByBikeId(bikeId).isPresent()) {
             throw new IllegalArgumentException("Bike with ID " + bikeId + " already exists");
         }
@@ -214,6 +214,8 @@ public class AdminService {
         Bike bike = new Bike();
         bike.setBikeId(bikeId);
         bike.setQrCode(qrCode != null ? qrCode : bikeId);
+        bike.setBikeType(bikeType != null ? bikeType : "Mountain");
+        bike.setBikeSize(bikeSize != null ? bikeSize : "26");
         bike.setStatus("LOCKED");
         bike.setIsUsable(true);
         bike.setBatteryLevel(100);
@@ -222,7 +224,7 @@ public class AdminService {
         bike.setLastUpdated(LocalDateTime.now());
 
         Bike savedBike = bikeRepository.save(bike);
-        log.info("Admin created new bike: {}", bikeId);
+        log.info("Admin created new bike: {} | Type: {} | Size: {}", bikeId, bikeType, bikeSize);
 
         return BikeStatusResponse.fromBike(savedBike);
     }
@@ -231,7 +233,7 @@ public class AdminService {
      * Update bike details
      */
     @Transactional
-    public BikeStatusResponse updateBike(String bikeId, String qrCode, Double latitude, Double longitude, Integer batteryLevel) {
+    public BikeStatusResponse updateBike(String bikeId, String qrCode, Double latitude, Double longitude, Integer batteryLevel, String bikeType, String bikeSize) {
         Bike bike = bikeRepository.findByBikeId(bikeId)
                 .orElseThrow(() -> new IllegalArgumentException("Bike not found with ID: " + bikeId));
 
@@ -239,10 +241,12 @@ public class AdminService {
         if (latitude != null) bike.setLatitude(latitude);
         if (longitude != null) bike.setLongitude(longitude);
         if (batteryLevel != null) bike.setBatteryLevel(batteryLevel);
+        if (bikeType != null) bike.setBikeType(bikeType);
+        if (bikeSize != null) bike.setBikeSize(bikeSize);
         bike.setLastUpdated(LocalDateTime.now());
 
         Bike savedBike = bikeRepository.save(bike);
-        log.info("Admin updated bike: {}", bikeId);
+        log.info("Admin updated bike: {} | Type: {} | Size: {}", bikeId, bikeType, bikeSize);
 
         return BikeStatusResponse.fromBike(savedBike);
     }

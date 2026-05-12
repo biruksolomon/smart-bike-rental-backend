@@ -166,12 +166,14 @@ public class AdminController {
     }
 
     @PostMapping("/bikes")
-    @Operation(summary = "Create a new bike", description = "Register a new bike in the system")
+    @Operation(summary = "Create a new bike", description = "Register a new bike in the system with type and size")
     public ResponseEntity<ApiResponse<BikeStatusResponse>> createBike(
             @RequestParam String bikeId,
             @RequestParam(required = false) String qrCode,
             @RequestParam(required = false) Double latitude,
             @RequestParam(required = false) Double longitude,
+            @RequestParam(defaultValue = "Mountain") String bikeType,
+            @RequestParam(defaultValue = "26") String bikeSize,
             HttpServletRequest request) {
         String role = (String) request.getAttribute("role");
         if (!"ADMIN".equals(role)) {
@@ -179,7 +181,7 @@ public class AdminController {
         }
 
         try {
-            BikeStatusResponse bike = adminService.createBike(bikeId, qrCode, latitude, longitude);
+            BikeStatusResponse bike = adminService.createBike(bikeId, qrCode, latitude, longitude, bikeType, bikeSize);
             return ResponseEntity.ok(ApiResponse.success("Bike created successfully", bike));
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(ApiResponse.error(e.getMessage()));
@@ -187,13 +189,15 @@ public class AdminController {
     }
 
     @PutMapping("/bikes/{bikeId}")
-    @Operation(summary = "Update bike details", description = "Update bike information")
+    @Operation(summary = "Update bike details", description = "Update bike information including type and size")
     public ResponseEntity<ApiResponse<BikeStatusResponse>> updateBike(
             @PathVariable String bikeId,
             @RequestParam(required = false) String qrCode,
             @RequestParam(required = false) Double latitude,
             @RequestParam(required = false) Double longitude,
             @RequestParam(required = false) Integer batteryLevel,
+            @RequestParam(required = false) String bikeType,
+            @RequestParam(required = false) String bikeSize,
             HttpServletRequest request) {
         String role = (String) request.getAttribute("role");
         if (!"ADMIN".equals(role)) {
@@ -201,7 +205,7 @@ public class AdminController {
         }
 
         try {
-            BikeStatusResponse bike = adminService.updateBike(bikeId, qrCode, latitude, longitude, batteryLevel);
+            BikeStatusResponse bike = adminService.updateBike(bikeId, qrCode, latitude, longitude, batteryLevel, bikeType, bikeSize);
             return ResponseEntity.ok(ApiResponse.success("Bike updated successfully", bike));
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(ApiResponse.error(e.getMessage()));
