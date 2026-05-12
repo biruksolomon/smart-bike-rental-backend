@@ -15,6 +15,8 @@ import java.time.LocalDateTime;
 public class BikeStatusResponse {
     private Long id;
     private String bikeId;
+    private String bikeType;
+    private String bikeSize;
     private String qrCode;
     private String status;
     private Boolean isUsable;
@@ -29,6 +31,8 @@ public class BikeStatusResponse {
         return BikeStatusResponse.builder()
                 .id(bike.getId())
                 .bikeId(bike.getBikeId())
+                .bikeType(bike.getBikeType())
+                .bikeSize(bike.getBikeSize())
                 .qrCode(bike.getQrCode())
                 .status(bike.getStatus())
                 .isUsable(bike.getIsUsable())
