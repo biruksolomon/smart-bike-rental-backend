@@ -66,7 +66,7 @@ public class BikeService {
      * Create a new bike in the system
      */
     @Transactional
-    public Bike createBike(String bikeId, String qrCode) {
+    public Bike createBike(String bikeId, String qrCode, String bikeType, String bikeSize) {
         // Check if bike already exists
         if (bikeRepository.findByBikeId(bikeId).isPresent()) {
             throw new IllegalArgumentException("Bike with ID " + bikeId + " already exists");
@@ -75,11 +75,13 @@ public class BikeService {
         Bike bike = new Bike();
         bike.setBikeId(bikeId);
         bike.setQrCode(qrCode != null ? qrCode : bikeId);
+        bike.setBikeType(bikeType != null ? bikeType : "Mountain");
+        bike.setBikeSize(bikeSize != null ? bikeSize : "26");
         bike.setStatus("LOCKED");
         bike.setIsUsable(true);
         bike.setLastUpdated(LocalDateTime.now());
 
-        log.info("Creating new bike with ID: {}", bikeId);
+        log.info("Creating new bike with ID: {} | Type: {} | Size: {}", bikeId, bikeType, bikeSize);
         return bikeRepository.save(bike);
     }
 

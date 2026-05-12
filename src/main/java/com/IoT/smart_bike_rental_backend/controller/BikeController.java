@@ -30,7 +30,7 @@ public class BikeController {
     @PostMapping
     @Operation(
             summary = "Create a new bike",
-            description = "Register a new bike in the rental system with a unique bike ID and QR code"
+            description = "Register a new bike in the rental system with a unique bike ID, QR code, type, and size"
     )
     @ApiResponses(value = {
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Bike created successfully"),
@@ -38,9 +38,11 @@ public class BikeController {
     })
     public ResponseEntity<?> createBike(
             @RequestParam String bikeId,
-            @RequestParam(required = false) String qrCode) {
+            @RequestParam(required = false) String qrCode,
+            @RequestParam(defaultValue = "Mountain") String bikeType,
+            @RequestParam(defaultValue = "26") String bikeSize) {
         try {
-            Bike bike = bikeService.createBike(bikeId, qrCode);
+            Bike bike = bikeService.createBike(bikeId, qrCode, bikeType, bikeSize);
             return ResponseEntity.ok(ApiResponse.success("Bike created successfully", bike));
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest()
