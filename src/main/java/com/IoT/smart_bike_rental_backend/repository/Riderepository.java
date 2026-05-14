@@ -38,4 +38,7 @@ public interface Riderepository extends JpaRepository<Ride, Long> {
 
    // Find rides by bike entity
    List<Ride> findByBike(Bike bike);
+
+   // Find ride by Chapa transaction reference (for webhook processing)
+   Optional<Ride> findByChapaTxRef(String chapaTxRef);
 }
