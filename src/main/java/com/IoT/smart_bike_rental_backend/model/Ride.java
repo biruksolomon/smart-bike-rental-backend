@@ -35,9 +35,21 @@ public class Ride {
     // Duration in minutes (calculated field)
     private Long durationMinutes;
 
-    // Payment status for the ride
+    // Payment status for the ride (PENDING, AUTHORIZED, COMPLETED, FAILED, REFUNDED)
     @Column(name = "payment_status")
     private String paymentStatus = "PENDING";
+
+    // Chapa transaction reference (unique identifier from Chapa)
+    @Column(name = "chapa_tx_ref", unique = true)
+    private String chapaTxRef;
+
+    // Chapa pre-authorization ID (for later capture)
+    @Column(name = "chapa_auth_id")
+    private String chapaAuthId;
+
+    // Chapa capture/charge ID (final payment proof)
+    @Column(name = "chapa_charge_id")
+    private String chapaChargeId;
 
     @Column(name = "is_active")
     private boolean active;
