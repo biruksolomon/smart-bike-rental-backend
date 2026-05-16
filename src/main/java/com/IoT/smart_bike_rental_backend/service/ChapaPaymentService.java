@@ -190,7 +190,7 @@ public class ChapaPaymentService {
 
         // 1. Customization: branding shown on the Chapa-hosted payment page
         Customization customization = new Customization()
-                .setTitle("Smart Bike Rental")
+                .setTitle("Smart Bike")
                 .setDescription("Pay for your bike ride securely via Chapa")
                 .setLogo("https://smartbike.com/logo.png"); // TODO: replace with real logo URL
 

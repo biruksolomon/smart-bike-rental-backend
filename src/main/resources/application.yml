@@ -58,6 +58,22 @@ jwt:
   secret: mySecretKeyForSmartBikeRentalApplicationWithMinimum256BitsLength
   expiration: 86400000
 
+# Chapa Payment Gateway Configuration
+chapa:
+  api-url: https://api.chapa.co/v1
+  secret-key: CHASECK_TEST-0Td4aInPwTC3s4rSLoM3xjcPQ1YV0hmX
+  webhook-secret: CHAPA_WEBHOOK_SECRET_2024_SKEGMARKET_b8f9c2e1a4d7f6h3j9k2m5n8p1q4r7s0t3u6v9w2x5y8z1a4b7c0d3e6f9g2h5i8j1k4l7m0n3o6p9q2r5s8t1u4v7w0x3y6z9
+
+# Application Callback URL for Chapa redirects
+app:
+  callback-url: http://localhost:7080/api/payment/callback
+
+# REST Template Configuration for HTTP timeouts
+rest-template:
+  connection-timeout: 5000
+  read-timeout: 10000
+
+
 springdoc:
   api-docs:
     path: /v3/api-docs
