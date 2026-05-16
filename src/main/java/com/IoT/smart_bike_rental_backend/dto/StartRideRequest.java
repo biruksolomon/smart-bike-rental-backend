@@ -5,7 +5,7 @@ import lombok.Data;
 @Data
 public class StartRideRequest {
     private Long userId;
-    private String qrCode;
+    private Long bookingId;  // Changed from qrCode to bookingId
 
     // Optional GPS coordinates for start location
     private Double startLatitude;
