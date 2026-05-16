@@ -1,14 +1,16 @@
 package com.IoT.smart_bike_rental_backend.service;
 
-import com.IoT.smart_bike_rental_backend.dto.BikeStatusResponse;
-import com.IoT.smart_bike_rental_backend.dto.RideResponse;
-import com.IoT.smart_bike_rental_backend.dto.StartRideRequest;
+import com.IoT.smart_bike_rental_backend.dto.BookingResponse;
+import com.IoT.smart_bike_rental_backend.model.Bike;
+import com.IoT.smart_bike_rental_backend.model.Booking;
 import com.IoT.smart_bike_rental_backend.model.User;
 import com.IoT.smart_bike_rental_backend.repository.Bikerepository;
+import com.IoT.smart_bike_rental_backend.repository.BookingRepository;
 import com.IoT.smart_bike_rental_backend.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import java.time.LocalDateTime;
 
 /**
  * BookingService — orchestrates the complete bike booking flow.
@@ -44,15 +46,23 @@ public class BookingService {
 
     private final UserRepository userRepository;
     private final Bikerepository bikeRepository;
-    private final BikeService bikeService;
-    private final RideService rideService;
+    private final BookingRepository bookingRepository;
 
     /**
      * Main booking entry point — called by BookingController when the user scans a bike QR code.
      *
+     * Flow:
+     * 1. Validate user
+     * 2. Find bike by QR code
+     * 3. Check bike availability
+     * 4. Create Booking record with status PENDING
+     * 5. Return bookingId to user
+     *
+     * User then calls startRide(bookingId) to actually start the ride and unlock the bike.
+     *
      * @param userId  ID of the authenticated user (from JWT).
      * @param qrCode  QR code string scanned from the bike.
-     * @return        {@link BookingResult} — success carries the Chapa checkout URL and rideResponse;
+     * @return        {@link BookingResult} — success carries bookingId;
      *                failure carries an error message.
      */
     public BookingResult processBooking(Long userId, String qrCode) {
@@ -64,42 +74,42 @@ public class BookingService {
             return BookingResult.failure("User not found");
         }
 
-        // ── Step 2: Fetch bike status ─────────────────────────────────────────
-        BikeStatusResponse bikeStatus;
-        try {
-            bikeStatus = bikeService.getBikeStatusByQrCode(qrCode);
-        } catch (IllegalArgumentException e) {
+        // ── Step 2: Find bike by QR code ─────────────────────────────────────
+        Bike bike = bikeRepository.findByQrCode(qrCode)
+                .orElse(null);
+        if (bike == null) {
             return BookingResult.failure("Bike not found with this QR code");
         }
 
         // ── Step 3: Check bike availability ──────────────────────────────────
-        if (!bikeStatus.getIsAvailable()) {
-            String reason = determineUnavailabilityReason(bikeStatus);
-            log.warn("Bike {} is not available: {}", bikeStatus.getBikeId(), reason);
+        if (!bike.isAvailable()) {
+            String reason = determineUnavailabilityReason(bike);
+            log.warn("Bike {} is not available: {}", bike.getBikeId(), reason);
             return BookingResult.failure(reason);
         }
 
-        // ── Step 4: Start ride — send MQTT UNLOCK command ──────────────────────
+        // ── Step 4: Create Booking record ────────────────────────────────────
         try {
-            StartRideRequest request = new StartRideRequest();
-            request.setUserId(userId);
-            request.setQrCode(qrCode);
+            Booking booking = new Booking();
+            booking.setUser(user);
+            booking.setBike(bike);
+            booking.setBookingTime(LocalDateTime.now());
+            booking.setStatus("PENDING");
+            booking.setQrCode(qrCode);
 
-            RideResponse rideResponse = rideService.startRide(request);
+            Booking savedBooking = bookingRepository.save(booking);
+            log.info("Booking created — bookingId: {}, userId: {}, bikeId: {}",
+                    savedBooking.getId(), userId, bike.getBikeId());
 
-            log.info("Ride started — rideId: {}", rideResponse.getRideId());
-
-            // ── Step 5: Return success — payment will be initialized at ride end ──
-            return BookingResult.success(
-                    "Bike unlocked! Pay after your ride.",
-                    rideResponse,
-                    null,        // no txRef yet
-                    null         // no checkoutUrl yet
+            // ── Step 5: Return success with bookingId ───────────────────────────
+            return BookingResult.successBooking(
+                    "Bike reserved! Click 'Start Ride' to unlock and begin your journey.",
+                    BookingResponse.fromBooking(savedBooking)
             );
 
         } catch (Exception e) {
-            log.error("Failed to start ride for userId {}: {}", userId, e.getMessage());
-            return BookingResult.failure("Failed to unlock bike: " + e.getMessage());
+            log.error("Failed to create booking for userId {}: {}", userId, e.getMessage());
+            return BookingResult.failure("Failed to reserve bike: " + e.getMessage());
         }
     }
 
@@ -107,13 +117,11 @@ public class BookingService {
     // Private helpers
     // -------------------------------------------------------------------------
 
-    /** Maps a BikeStatusResponse to a human-readable unavailability reason. */
-    private String determineUnavailabilityReason(BikeStatusResponse status) {
-        if ("IN_USE".equals(status.getStatus()))          return "Bike is currently in use by another user";
-        if ("MAINTENANCE".equals(status.getStatus()))     return "Bike is under maintenance";
-        if (!Boolean.TRUE.equals(status.getIsUsable()))   return "Bike is not available for rental";
-        if (status.getBatteryLevel() != null && status.getBatteryLevel() < 10)
-            return "Bike battery is too low";
+    /** Maps a Bike to a human-readable unavailability reason. */
+    private String determineUnavailabilityReason(Bike bike) {
+        if ("IN_USE".equals(bike.getStatus()))           return "Bike is currently in use by another user";
+        if ("MAINTENANCE".equals(bike.getStatus()))      return "Bike is under maintenance";
+        if (!Boolean.TRUE.equals(bike.getIsUsable()))    return "Bike is not available for rental";
         return "Bike is not available";
     }
 
@@ -124,10 +132,8 @@ public class BookingService {
     /**
      * Encapsulates the outcome of a booking attempt.
      *
-     * On success:
-     *   • {@link #getRideResponse()} — the started ride (id, bike, user, startTime …)
-     *   • {@link #getTransactionId()} — the Chapa txRef (store this on the Ride)
-     *   • {@link #getCheckoutUrl()}  — redirect the user here to complete payment
+     * On success (from booking):
+     *   • {@link #getBookingResponse()} — the booking with bookingId
      *
      * On failure:
      *   • {@link #getMessage()} — human-readable reason for the failure
@@ -136,32 +142,24 @@ public class BookingService {
 
         private final boolean success;
         private final String message;
-        private final RideResponse rideResponse;
-        private final String transactionId;
-        private final String checkoutUrl;
+        private final BookingResponse bookingResponse;
 
-        private BookingResult(boolean success, String message,
-                              RideResponse rideResponse, String transactionId, String checkoutUrl) {
+        private BookingResult(boolean success, String message, BookingResponse bookingResponse) {
             this.success = success;
             this.message = message;
-            this.rideResponse = rideResponse;
-            this.transactionId = transactionId;
-            this.checkoutUrl = checkoutUrl;
+            this.bookingResponse = bookingResponse;
         }
 
-        public static BookingResult success(String message, RideResponse rideResponse,
-                                            String transactionId, String checkoutUrl) {
-            return new BookingResult(true, message, rideResponse, transactionId, checkoutUrl);
+        public static BookingResult successBooking(String message, BookingResponse bookingResponse) {
+            return new BookingResult(true, message, bookingResponse);
         }
 
         public static BookingResult failure(String message) {
-            return new BookingResult(false, message, null, null, null);
+            return new BookingResult(false, message, null);
         }
 
-        public boolean isSuccess()            { return success; }
-        public String getMessage()            { return message; }
-        public RideResponse getRideResponse() { return rideResponse; }
-        public String getTransactionId()      { return transactionId; }
-        public String getCheckoutUrl()        { return checkoutUrl; }
+        public boolean isSuccess()                    { return success; }
+        public String getMessage()                    { return message; }
+        public BookingResponse getBookingResponse()   { return bookingResponse; }
     }
 }
