@@ -11,6 +11,9 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
+import java.math.BigDecimal;
+import java.util.UUID;
+
 /**
  * BookingService - Orchestrates the complete bike booking flow
  *
@@ -35,7 +38,7 @@ public class BookingService {
     private final Bikerepository bikeRepository;
     private final BikeService bikeService;
     private final RideService rideService;
-    private final PaymentService paymentService;
+    private final ChapaPaymentService chapaPaymentService;
 
     /**
      * Complete booking flow - from QR scan to bike unlock
@@ -65,13 +68,25 @@ public class BookingService {
             return BookingResult.failure(reason);
         }
 
-        // Step 4: Simulate payment
-        PaymentService.PaymentResult paymentResult = paymentService.processPayment(user, bikeStatus.getBikeId());
-        if (!paymentResult.isSuccess()) {
-            return BookingResult.failure("Payment failed: " + paymentResult.getMessage());
+        // Step 4: Initialize Chapa payment
+        String txRef = generateTransactionReference(user.getId(), bikeStatus.getBikeId());
+        try {
+            BigDecimal initialAmount = new BigDecimal("100.00"); // Initial charge for unlock
+
+            ChapaPaymentService.PaymentInitResponse paymentResponse =
+                    chapaPaymentService.initializePayment(
+                            txRef,
+                            user.getEmail(),
+                            user.getName(),
+                            initialAmount
+                    );
+
+            log.info("Payment initialized for user {} - TxRef: {}, Checkout URL: {}",
+                    user.getEmail(), txRef, paymentResponse.getCheckoutUrl());
+        } catch (Exception e) {
+            log.error("Payment initialization failed: {}", e.getMessage());
+            return BookingResult.failure("Payment initialization failed: " + e.getMessage());
         }
-        log.info("Payment authorized for user {} - Transaction: {}",
-                user.getEmail(), paymentResult.getTransactionId());
 
         // Step 5: Start ride (this will send UNLOCK command)
         try {
@@ -82,16 +97,30 @@ public class BookingService {
             RideResponse rideResponse = rideService.startRide(request);
 
             return BookingResult.success(
-                    "Booking successful! Bike unlocked.",
+                    "Booking successful! Bike unlocked. Complete payment to finalize ride.",
                     rideResponse,
-                    paymentResult.getTransactionId()
+                    txRef
             );
         } catch (Exception e) {
-            log.error("Failed to start ride after payment: {}", e.getMessage());
-            // In production, refund the payment here
-            paymentService.refundPayment(paymentResult.getTransactionId());
+            log.error("Failed to start ride: {}", e.getMessage());
+            // Chapa payment will be refunded via webhook if customer doesn't complete payment
             return BookingResult.failure("Failed to unlock bike: " + e.getMessage());
         }
+    }
+
+    /**
+     * Generate a unique transaction reference for Chapa
+     * Note: RideService generates its own BIKE-RIDE- prefix, so we don't need to generate here
+     * This method is kept for reference but should delegate to RideService
+     */
+    private String generateTransactionReference(Long userId, String bikeId) {
+        // RideService handles Chapa transaction reference generation
+        // This is a fallback method
+        return String.format("BIKE-RENT-%d-%s-%d",
+                userId,
+                bikeId,
+                System.currentTimeMillis()
+        );
     }
 
     /**
