@@ -4,10 +4,12 @@ import com.IoT.smart_bike_rental_backend.dto.EndRideRequest;
 import com.IoT.smart_bike_rental_backend.dto.RideResponse;
 import com.IoT.smart_bike_rental_backend.dto.StartRideRequest;
 import com.IoT.smart_bike_rental_backend.model.Bike;
+import com.IoT.smart_bike_rental_backend.model.Booking;
 import com.IoT.smart_bike_rental_backend.model.Ride;
 import com.IoT.smart_bike_rental_backend.model.User;
 import com.IoT.smart_bike_rental_backend.mqtt.MqttService;
 import com.IoT.smart_bike_rental_backend.repository.Bikerepository;
+import com.IoT.smart_bike_rental_backend.repository.BookingRepository;
 import com.IoT.smart_bike_rental_backend.repository.Riderepository;
 import com.IoT.smart_bike_rental_backend.repository.UserRepository;
 import com.yaphet.chapa.model.InitializeResponseData;
@@ -32,6 +34,7 @@ public class RideService {
     private final Riderepository rideRepository;
     private final Bikerepository bikeRepository;
     private final UserRepository userRepository;
+    private final BookingRepository bookingRepository;
     private final MqttService mqttService;
     private final ChapaPaymentService chapaPaymentService;
 
@@ -43,37 +46,38 @@ public class RideService {
     private static final BigDecimal MINIMUM_CHARGE = new BigDecimal("1.00");
 
     /**
-     * Start a new ride - Full flow per the system diagram:
-     * 1. Receive QR code from mobile app
-     * 2. Fetch bike status
+     * Start a new ride from a booking - Full flow per the system diagram:
+     * 1. Find booking by ID
+     * 2. Get user and bike from booking
      * 3. Check if bike is usable
      * 4. Create ride record
-     * 5. Send UNLOCK command via MQTT
+     * 5. Update booking status to RIDE_STARTED
+     * 6. Send UNLOCK command via MQTT
      *
      * Payment initialization is deferred to endRide() to ensure the cost is exact
      * and to avoid session expiry issues.
      */
     @Transactional
     public RideResponse startRide(StartRideRequest request) {
-        log.info("Starting ride for user {} with QR code {}", request.getUserId(), request.getQrCode());
+        log.info("Starting ride for user {} from booking {}", request.getUserId(), request.getBookingId());
 
-        // Step 1: Validate user exists
-        User user = userRepository.findById(request.getUserId())
-                .orElseThrow(() -> new IllegalArgumentException("User not found with ID: " + request.getUserId()));
+        // Step 1: Find booking by ID
+        Booking booking = bookingRepository.findById(request.getBookingId())
+                .orElseThrow(() -> new IllegalArgumentException("Booking not found with ID: " + request.getBookingId()));
 
-        // Check if user already has an active ride
+        // Step 2: Get user and bike from booking
+        User user = booking.getUser();
+        Bike bike = booking.getBike();
+
+        log.info("Booking found: {} - Bike: {} - User: {}", booking.getId(), bike.getBikeId(), user.getName());
+
+        // Step 3: Check if user already has an active ride
         Optional<Ride> existingRide = rideRepository.findByUserAndActiveTrue(user);
         if (existingRide.isPresent()) {
             throw new IllegalStateException("User already has an active ride. Please end your current ride first.");
         }
 
-        // Step 2: Fetch bike status by QR code
-        Bike bike = bikeRepository.findByQrCode(request.getQrCode())
-                .orElseThrow(() -> new IllegalArgumentException("Bike not found with QR code: " + request.getQrCode()));
-
-        log.info("Bike found: {} with status {}", bike.getBikeId(), bike.getStatus());
-
-        // Step 3: Check if bike is usable
+        // Step 4: Check if bike is still usable
         if (!bike.isAvailable()) {
             String reason = "IN_USE".equals(bike.getStatus())
                     ? "Bike is currently in use by another user"
@@ -83,7 +87,7 @@ public class RideService {
             throw new IllegalStateException(reason);
         }
 
-        // Step 4: Create ride record
+        // Step 5: Create ride record
         Ride ride = new Ride();
         ride.setUser(user);
         ride.setBike(bike);
@@ -95,15 +99,19 @@ public class RideService {
         ride.setStartLongitude(request.getStartLongitude());
 
         Ride savedRide = rideRepository.save(ride);
-        log.info("Ride record created with ID {}", savedRide.getId());
+        log.info("Ride record created with ID {} from booking {}", savedRide.getId(), booking.getId());
 
-        // Step 5: Update bike status to IN_USE
+        // Step 6: Update booking status
+        booking.setStatus("RIDE_STARTED");
+        bookingRepository.save(booking);
+
+        // Step 7: Update bike status to IN_USE
         bike.setStatus("IN_USE");
         bike.setCurrentUser(user);
         bike.setLastUpdated(LocalDateTime.now());
         bikeRepository.save(bike);
 
-        // Step 6: Send MQTT command to ESP32 to unlock bike
+        // Step 8: Send MQTT command to ESP32 to unlock bike
         sendUnlockCommand(bike.getBikeId());
 
         return RideResponse.fromRide(savedRide, "Ride started successfully. Bike unlocked! Pay after your ride.");
