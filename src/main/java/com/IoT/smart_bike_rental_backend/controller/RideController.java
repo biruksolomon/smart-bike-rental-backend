@@ -28,32 +28,31 @@ public class RideController {
     private final RideService rideService;
 
     /**
-     * Start a new ride using QR code
-     * This is the main endpoint called when user scans a bike QR code
+     * Start a new ride from a booking
+     * This is called AFTER a booking has been created
      *
      * Flow:
-     * 1. Mobile app scans QR code
-     * 2. Sends request to this endpoint
-     * 3. Backend simulates payment
-     * 4. Backend checks bike status
-     * 5. Backend sends UNLOCK command via MQTT
-     * 6. Returns ride info to mobile app
+     * 1. User calls POST /api/booking/scan to create booking (returns bookingId)
+     * 2. User calls this endpoint with bookingId and userId
+     * 3. Backend creates Ride record
+     * 4. Backend sends UNLOCK command via MQTT
+     * 5. Returns ride info to mobile app
      */
     @PostMapping("/start")
     @Operation(
-            summary = "Start a new ride",
-            description = "Initiate a bike ride by scanning QR code. Simulates payment, validates bike availability, and sends UNLOCK command to ESP32."
+            summary = "Start a new ride from a booking",
+            description = "Initiate a bike ride using a bookingId. Creates ride record, validates bike availability, and sends UNLOCK command to ESP32."
     )
     @SecurityRequirement(name = "bearerAuth")
     @ApiResponses(value = {
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Ride started successfully, bike unlocked"),
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "400", description = "Invalid user, bike not found, or bike not available"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "400", description = "Invalid booking, user, or bike not available"),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "409", description = "User already has an active ride")
     })
     public ResponseEntity<?> startRide(@RequestBody StartRideRequest request) {
         try {
-            log.info("Received start ride request for user {} with QR code {}",
-                    request.getUserId(), request.getQrCode());
+            log.info("Received start ride request for user {} with booking {}",
+                    request.getUserId(), request.getBookingId());
 
             RideResponse response = rideService.startRide(request);
             return ResponseEntity.ok(ApiResponse.success("Ride started successfully", response));
@@ -70,7 +69,7 @@ public class RideController {
     }
 
     /**
-     * Start a new ride (alternative with query params for backwards compatibility)
+     * Start a new ride (alternative with query params)
      */
     @PostMapping("/start/simple")
     @Operation(
@@ -80,10 +79,10 @@ public class RideController {
     @SecurityRequirement(name = "bearerAuth")
     public ResponseEntity<?> startRideSimple(
             @RequestParam Long userId,
-            @RequestParam String qrCode) {
+            @RequestParam Long bookingId) {
         StartRideRequest request = new StartRideRequest();
         request.setUserId(userId);
-        request.setQrCode(qrCode);
+        request.setBookingId(bookingId);
         return startRide(request);
     }
 

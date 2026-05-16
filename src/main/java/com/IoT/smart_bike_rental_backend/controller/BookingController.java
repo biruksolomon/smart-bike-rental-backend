@@ -68,65 +68,18 @@ public class BookingController {
         BookingService.BookingResult result = bookingService.processBooking(userId, qrCode);
 
         if (result.isSuccess()) {
-            log.info("Booking SUCCESS for user {} - Ride ID: {}",
-                    userId, result.getRideResponse().getRideId());
+            log.info("Booking SUCCESS for user {} - Booking ID: {}",
+                    userId, result.getBookingResponse().getBookingId());
 
             return ResponseEntity.ok(ApiResponse.success(
                     result.getMessage(),
-                    new BookingResponse(
-                            result.getRideResponse(),
-                            result.getTransactionId()
-                    )
+                    result.getBookingResponse()
             ));
         } else {
             log.warn("Booking FAILED for user {}: {}", userId, result.getMessage());
 
             return ResponseEntity.badRequest()
                     .body(ApiResponse.error(result.getMessage()));
-        }
-    }
-
-    /**
-     * Check bike availability before booking (optional pre-check)
-     */
-    @GetMapping("/check/{qrCode}")
-    @Operation(
-            summary = "Check bike availability",
-            description = "Pre-check if a bike is available before booking (optional step)"
-    )
-    public ResponseEntity<?> checkAvailability(@PathVariable String qrCode) {
-        try {
-            // This delegates to BikeService for status check
-            return ResponseEntity.ok(ApiResponse.success(
-                    "Use /api/bikes/qr/{qrCode} for bike status",
-                    null
-            ));
-        } catch (Exception e) {
-            return ResponseEntity.badRequest()
-                    .body(ApiResponse.error(e.getMessage()));
-        }
-    }
-
-    /**
-     * Response wrapper for booking
-     */
-    public static class BookingResponse {
-        private final com.IoT.smart_bike_rental_backend.dto.RideResponse ride;
-        private final String transactionId;
-
-        public BookingResponse(
-                com.IoT.smart_bike_rental_backend.dto.RideResponse ride,
-                String transactionId) {
-            this.ride = ride;
-            this.transactionId = transactionId;
-        }
-
-        public com.IoT.smart_bike_rental_backend.dto.RideResponse getRide() {
-            return ride;
-        }
-
-        public String getTransactionId() {
-            return transactionId;
         }
     }
 }
