@@ -10,6 +10,7 @@ import com.IoT.smart_bike_rental_backend.mqtt.MqttService;
 import com.IoT.smart_bike_rental_backend.repository.Bikerepository;
 import com.IoT.smart_bike_rental_backend.repository.Riderepository;
 import com.IoT.smart_bike_rental_backend.repository.UserRepository;
+import com.yaphet.chapa.model.InitializeResponseData;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -44,11 +45,13 @@ public class RideService {
     /**
      * Start a new ride - Full flow per the system diagram:
      * 1. Receive QR code from mobile app
-     * 2. Initialize payment with Chapa (pre-authorization)
-     * 3. Fetch bike status
-     * 4. Check if bike is usable
-     * 5. If yes, send UNLOCK command via MQTT
-     * 6. Create ride record with Chapa transaction reference
+     * 2. Fetch bike status
+     * 3. Check if bike is usable
+     * 4. Create ride record
+     * 5. Send UNLOCK command via MQTT
+     *
+     * Payment initialization is deferred to endRide() to ensure the cost is exact
+     * and to avoid session expiry issues.
      */
     @Transactional
     public RideResponse startRide(StartRideRequest request) {
@@ -64,30 +67,13 @@ public class RideService {
             throw new IllegalStateException("User already has an active ride. Please end your current ride first.");
         }
 
-        // Step 2: Initialize payment with Chapa (pre-authorization)
-        String chapaTxRef = "BIKE-RIDE-" + UUID.randomUUID().toString();
-        String chapaCheckoutUrl = null;
-
-        if (chapaPaymentEnabled) {
-            try {
-                // Initialize payment with Chapa for minimum amount
-                ChapaPaymentService.PaymentInitResponse paymentResponse = initiateChapaPayment(
-                        user, chapaTxRef, MINIMUM_CHARGE);
-                chapaCheckoutUrl = paymentResponse.getCheckoutUrl();
-                log.info("Chapa payment initialized for user {} - Checkout URL provided", user.getEmail());
-            } catch (Exception e) {
-                log.error("Chapa payment initialization failed for user {}: {}", user.getEmail(), e.getMessage());
-                throw new IllegalStateException("Payment initialization failed: " + e.getMessage());
-            }
-        }
-
-        // Step 3: Fetch bike status by QR code
+        // Step 2: Fetch bike status by QR code
         Bike bike = bikeRepository.findByQrCode(request.getQrCode())
                 .orElseThrow(() -> new IllegalArgumentException("Bike not found with QR code: " + request.getQrCode()));
 
         log.info("Bike found: {} with status {}", bike.getBikeId(), bike.getStatus());
 
-        // Step 4: Check if bike is usable
+        // Step 3: Check if bike is usable
         if (!bike.isAvailable()) {
             String reason = "IN_USE".equals(bike.getStatus())
                     ? "Bike is currently in use by another user"
@@ -97,40 +83,39 @@ public class RideService {
             throw new IllegalStateException(reason);
         }
 
-        // Step 5: Create ride record with Chapa transaction reference
+        // Step 4: Create ride record
         Ride ride = new Ride();
         ride.setUser(user);
         ride.setBike(bike);
         ride.setStartTime(LocalDateTime.now());
         ride.setActive(true);
         ride.setCost(BigDecimal.ZERO);
-        ride.setPaymentStatus("AUTHORIZED");
-        ride.setChapaTxRef(chapaTxRef);
+        ride.setPaymentStatus("PENDING");
         ride.setStartLatitude(request.getStartLatitude());
         ride.setStartLongitude(request.getStartLongitude());
 
         Ride savedRide = rideRepository.save(ride);
-        log.info("Ride record created with ID {} - Chapa TxRef: {}", savedRide.getId(), chapaTxRef);
+        log.info("Ride record created with ID {}", savedRide.getId());
 
-        // Step 6: Update bike status to IN_USE
+        // Step 5: Update bike status to IN_USE
         bike.setStatus("IN_USE");
         bike.setCurrentUser(user);
         bike.setLastUpdated(LocalDateTime.now());
         bikeRepository.save(bike);
 
-        // Step 7: Send MQTT command to ESP32 to unlock bike
+        // Step 6: Send MQTT command to ESP32 to unlock bike
         sendUnlockCommand(bike.getBikeId());
 
-        return RideResponse.fromRide(savedRide, "Ride started successfully. Bike unlocked. Payment authorized with Chapa.");
+        return RideResponse.fromRide(savedRide, "Ride started successfully. Bike unlocked! Pay after your ride.");
     }
 
     /**
      * End a ride - Full flow per the system diagram:
-     * 1. Send LOCK command via MQTT
-     * 2. Compute ride cost and duration
-     * 3. Capture payment with Chapa (final charge)
-     * 4. Store ride data
-     * 5. Update bike status
+     * 1. Compute ride cost and duration
+     * 2. Initialize payment with Chapa with the exact calculated cost
+     * 3. Store ride data
+     * 4. Update bike status
+     * 5. Send LOCK command via MQTT
      */
     @Transactional
     public RideResponse endRide(EndRideRequest request) {
@@ -161,28 +146,40 @@ public class RideService {
         }
         ride.setCost(cost);
 
-        // Capture payment with Chapa (if enabled)
-        if (chapaPaymentEnabled && ride.getChapaTxRef() != null) {
+        // Initialize payment with Chapa at ride end with exact cost (if enabled)
+        String checkoutUrl = null;
+        if (chapaPaymentEnabled) {
             try {
-                // Verify payment with Chapa before finalizing
-                ChapaPaymentService.PaymentVerifyResponse verification =
-                        chapaPaymentService.verifyPayment(ride.getChapaTxRef());
+                String txRef = "BIKE-RIDE-" + ride.getId() + "-" + System.currentTimeMillis();
 
-                ride.setChapaChargeId(verification.getTxRef());
-                ride.setPaymentStatus("PENDING_WEBHOOK"); // Wait for webhook confirmation of final amount
-                log.info("Chapa payment verified for ride {} - Awaiting webhook confirmation", ride.getId());
+                InitializeResponseData paymentResponse = chapaPaymentService.initializePayment(
+                        txRef,
+                        ride.getUser().getEmail(),
+                        ride.getUser().getName(),
+                        cost                        // exact calculated cost
+                );
+
+                checkoutUrl = paymentResponse.getData() != null
+                        ? paymentResponse.getData().getCheckOutUrl()
+                        : null;
+
+                ride.setChapaTxRef(txRef);
+                ride.setPaymentStatus("PENDING_PAYMENT");
+
+                log.info("Chapa payment initialized for ride {} - TxRef: {} - Cost: {}", ride.getId(), txRef, cost);
+
             } catch (Exception e) {
-                log.error("Chapa payment verification failed for ride {}: {}", ride.getId(), e.getMessage());
+                log.error("Payment init failed for ride {}: {}", ride.getId(), e.getMessage());
                 ride.setPaymentStatus("PAYMENT_FAILED");
                 rideRepository.save(ride);
-                throw new IllegalStateException("Payment verification failed: " + e.getMessage());
+                throw new IllegalStateException("Payment initialization failed: " + e.getMessage());
             }
-        } else if (!chapaPaymentEnabled) {
+        } else {
             ride.setPaymentStatus("COMPLETED");
         }
 
         Ride savedRide = rideRepository.save(ride);
-        log.info("Ride {} completed. Duration: {} minutes, Cost: ${} - Payment Status: {}",
+        log.info("Ride {} completed. Duration: {} minutes, Cost: {} ETB - Payment Status: {}",
                 savedRide.getId(), durationMinutes, cost, savedRide.getPaymentStatus());
 
         // Update bike status back to LOCKED
@@ -202,8 +199,10 @@ public class RideService {
         // Send MQTT command to ESP32 to lock bike
         sendLockCommand(bike.getBikeId());
 
-        return RideResponse.fromRide(savedRide,
-                String.format("Ride completed. Duration: %d minutes. Total cost: $%s. Payment capture initiated.", durationMinutes, cost.toString()));
+        return RideResponse.fromRideWithCheckout(savedRide,
+                String.format("Ride completed. Duration: %d min. Cost: %s ETB. Please complete payment.",
+                        durationMinutes, cost),
+                checkoutUrl);
     }
 
     /**
@@ -252,30 +251,6 @@ public class RideService {
     }
 
     /**
-     * Initialize Chapa payment for ride start
-     */
-    private ChapaPaymentService.PaymentInitResponse initiateChapaPayment(User user, String txRef, BigDecimal amount) {
-        log.info("Initializing Chapa payment for user {} - Amount: {}, TxRef: {}", user.getEmail(), amount, txRef);
-        return chapaPaymentService.initializePayment(
-                txRef,
-                user.getEmail(),
-                user.getName() ,
-                amount
-        );
-    }
-
-    /**
-     * Simulate payment - In production, integrate with payment gateway
-     * For now, always returns true (payment successful)
-     */
-    private boolean simulatePayment(User user) {
-        log.info("Simulating payment for user: {}", user.getEmail());
-        // In production: Integrate with Stripe, PayPal, etc.
-        // For now, always return true (successful payment)
-        return true;
-    }
-
-    /**
      * Send UNLOCK command to bike via MQTT
      * Topic format: bike/{bikeId}/command
      * Payload: UNLOCK
@@ -288,7 +263,6 @@ public class RideService {
         } catch (Exception e) {
             log.error("Failed to send UNLOCK command to {}: {}", topic, e.getMessage());
             // Don't throw - the ride is still valid even if MQTT fails
-            // The bike might unlock on retry or manual intervention
         }
     }
 

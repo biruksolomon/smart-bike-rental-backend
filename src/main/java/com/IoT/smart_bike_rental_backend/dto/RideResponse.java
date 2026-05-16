@@ -28,6 +28,7 @@ public class RideResponse {
     private boolean active;
     private String bikeStatus;
     private String message;
+    private String checkoutUrl;
 
     public static RideResponse fromRide(Ride ride) {
         return fromRide(ride, null);
@@ -50,5 +51,11 @@ public class RideResponse {
                 .bikeStatus(ride.getBike() != null ? ride.getBike().getStatus() : null)
                 .message(message)
                 .build();
+    }
+
+    public static RideResponse fromRideWithCheckout(Ride ride, String message, String checkoutUrl) {
+        RideResponse r = fromRide(ride, message);
+        r.setCheckoutUrl(checkoutUrl);
+        return r;
     }
 }
