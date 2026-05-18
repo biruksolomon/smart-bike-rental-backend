@@ -9,9 +9,9 @@ spring:
     base-url: http://app:9080
 
   datasource:
-    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://postgres:5432/smartbike}
-    username: ${SPRING_DATASOURCE_USERNAME:smartbike_user}
-    password: ${SPRING_DATASOURCE_PASSWORD:smartbike_pass}
+    url: jdbc:postgresql://ep-summer-salad-aqlm9g8k-pooler.c-8.us-east-1.aws.neon.tech/neondb?sslmode=require
+    username: neondb_owner
+    password: npg_X4iqTO5aQkFj
     driver-class-name: org.postgresql.Driver
     hikari:
       maximum-pool-size: 10
@@ -27,8 +27,8 @@ spring:
   mail:
     host: smtp.gmail.com
     port: 587
-    username: ${SPRING_MAIL_USERNAME}
-    password: ${SPRING_MAIL_PASSWORD}
+    username: biruksolomonmoges@gmail.com
+    password: kbemdrrbdmkjxden
     from: ${SPRING_MAIL_FROM:noreply@smartbike.com}
     properties:
       mail:
