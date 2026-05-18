@@ -136,18 +136,57 @@ public class BikeService {
         return bikeRepository.save(bike);
     }
 
+
+    @Transactional
+    public void processGpsUpdate(String bikeId, String payload) {
+        bikeRepository.findByBikeId(bikeId).ifPresentOrElse(bike -> {
+            String latVal = extractJsonNumber(payload, "lat");
+            String lonVal = extractJsonNumber(payload, "lon");  // ESP32 uses "lon" not "lng"
+            if (latVal != null && lonVal != null) {
+                try {
+                    bike.setLatitude(Double.parseDouble(latVal));
+                    bike.setLongitude(Double.parseDouble(lonVal));
+                    bike.setLastUpdated(LocalDateTime.now());
+                    bikeRepository.save(bike);
+                    log.info("GPS updated for bike {}: {},{}", bikeId, latVal, lonVal);
+                } catch (NumberFormatException e) {
+                    log.warn("Invalid GPS in payload: {}", payload);
+                }
+            }
+        }, () -> log.warn("GPS update for unknown bike: {}", bikeId));
+    }
+
+
+    @Transactional
+    public void processAlertUpdate(String bikeId, String payload) {
+        if (payload == null) return;
+        String alert = payload.trim();
+        log.info("Alert from bike {}: {}", bikeId, alert);
+
+        bikeRepository.findByBikeId(bikeId).ifPresent(bike -> {
+            if (alert.contains("THEFT") || alert.contains("THEFT ALERT")) {
+                // Mark bike as potentially stolen — you can add a field or just log + notify
+                bike.setLastUpdated(LocalDateTime.now());
+                bikeRepository.save(bike);
+                log.warn("THEFT ALERT received for bike {}! Last known GPS: {},{}",
+                        bikeId, bike.getLatitude(), bike.getLongitude());
+                // TODO: trigger push notification to admin here
+            }
+            // "SAFE" alerts are informational — no action needed
+        });
+    }
+
     /**
-     * Send direct unlock command (admin/emergency use only)
+     * Send direct unlock command (admin/emergency use only).
+     * Publishes JSON: {"command":"UNLOCK","token":"<mqttToken>"}
      * Note: For normal rides, use RideService.startRide() instead
      */
     public void sendUnlockCommand(String bikeId) {
-        Bike bike = bikeRepository.findByBikeId(bikeId)
+        bikeRepository.findByBikeId(bikeId)
                 .orElseThrow(() -> new IllegalArgumentException("Bike not found with ID: " + bikeId));
-
-        String topic = "bike/" + bikeId + "/command";
         try {
-            mqttService.publish(topic, "UNLOCK");
-            log.info("Direct UNLOCK command sent to bike {}", bikeId);
+            mqttService.sendUnlockCommand(bikeId);
+            log.info("Direct UNLOCK command (JSON+token) sent to bike {}", bikeId);
         } catch (Exception e) {
             log.error("Failed to send UNLOCK command: {}", e.getMessage());
             throw new RuntimeException("Failed to send unlock command", e);
@@ -155,17 +194,16 @@ public class BikeService {
     }
 
     /**
-     * Send direct lock command (admin/emergency use only)
+     * Send direct lock command (admin/emergency use only).
+     * Publishes JSON: {"command":"LOCK","token":"<mqttToken>"}
      * Note: For normal rides, use RideService.endRide() instead
      */
     public void sendLockCommand(String bikeId) {
-        Bike bike = bikeRepository.findByBikeId(bikeId)
+        bikeRepository.findByBikeId(bikeId)
                 .orElseThrow(() -> new IllegalArgumentException("Bike not found with ID: " + bikeId));
-
-        String topic = "bike/" + bikeId + "/command";
         try {
-            mqttService.publish(topic, "LOCK");
-            log.info("Direct LOCK command sent to bike {}", bikeId);
+            mqttService.sendLockCommand(bikeId);
+            log.info("Direct LOCK command (JSON+token) sent to bike {}", bikeId);
         } catch (Exception e) {
             log.error("Failed to send LOCK command: {}", e.getMessage());
             throw new RuntimeException("Failed to send lock command", e);
@@ -173,11 +211,19 @@ public class BikeService {
     }
 
     /**
-     * Process status update from bike (received via MQTT)
-     * This is called when the bike ESP32 publishes to bike/{bikeId}/status
+     * Process status update from bike (received via MQTT).
+     * Called when the ESP32 publishes to bike/{bikeId}/status.
+     *
+     * Expected JSON payloads:
+     *   {"token":"1234","status":"LOCKED"}
+     *   {"token":"1234","status":"UNLOCKED"}
+     *   {"token":"1234","battery":85}
+     *   {"token":"1234","lat":9.03,"lng":38.74}
+     *
+     * Token validation is already done in MqttService before this method is called.
      */
     @Transactional
-    public void processStatusUpdate(String bikeId, String status) {
+    public void processStatusUpdate(String bikeId, String payload) {
         Optional<Bike> bikeOpt = bikeRepository.findByBikeId(bikeId);
         if (bikeOpt.isEmpty()) {
             log.warn("Received status update for unknown bike: {}", bikeId);
@@ -185,32 +231,83 @@ public class BikeService {
         }
 
         Bike bike = bikeOpt.get();
-        log.info("Processing status update for bike {}: {}", bikeId, status);
+        log.info("Processing JSON status update for bike {}: {}", bikeId, payload);
 
-        // Parse status message (could be JSON in production)
-        // For now, expecting simple status like "LOCKED", "UNLOCKED", "BATTERY:85"
-        if (status.startsWith("BATTERY:")) {
+        // --- Parse JSON fields without requiring Jackson ---
+
+        // "status" field  →  LOCKED / UNLOCKED
+        String statusVal = extractJsonString(payload, "status");
+        if ("LOCKED".equals(statusVal) || "UNLOCKED".equals(statusVal)) {
+            log.info("Bike {} confirmed state: {}", bikeId, statusVal);
+            // Optionally mirror confirmed state back to DB:
+            // bike.setStatus(statusVal);
+        }
+
+        // "battery" field  →  integer 0-100
+        String batteryVal = extractJsonNumber(payload, "battery");
+        if (batteryVal != null) {
             try {
-                int battery = Integer.parseInt(status.substring(8));
-                bike.setBatteryLevel(battery);
+                bike.setBatteryLevel(Integer.parseInt(batteryVal));
+                log.debug("Bike {} battery: {}%", bikeId, batteryVal);
             } catch (NumberFormatException e) {
-                log.warn("Invalid battery level in status: {}", status);
+                log.warn("Invalid battery value in status payload: {}", payload);
             }
-        } else if (status.startsWith("GPS:")) {
-            // Format: GPS:lat,lng
+        }
+
+        // "lat" / "lng" fields  →  GPS coordinates
+        String latVal = extractJsonNumber(payload, "lat");
+        String lngVal = extractJsonNumber(payload, "lng");
+        if (latVal != null && lngVal != null) {
             try {
-                String[] coords = status.substring(4).split(",");
-                bike.setLatitude(Double.parseDouble(coords[0]));
-                bike.setLongitude(Double.parseDouble(coords[1]));
-            } catch (Exception e) {
-                log.warn("Invalid GPS coordinates in status: {}", status);
+                bike.setLatitude(Double.parseDouble(latVal));
+                bike.setLongitude(Double.parseDouble(lngVal));
+                log.debug("Bike {} GPS updated: {},{}", bikeId, latVal, lngVal);
+            } catch (NumberFormatException e) {
+                log.warn("Invalid GPS values in status payload: {}", payload);
             }
-        } else if ("LOCKED".equals(status) || "UNLOCKED".equals(status)) {
-            // Bike confirmed lock/unlock state
-            log.info("Bike {} confirmed state: {}", bikeId, status);
         }
 
         bike.setLastUpdated(LocalDateTime.now());
         bikeRepository.save(bike);
+    }
+
+    // -----------------------------------------------------------------------
+    // Tiny JSON helpers — extract a string value or a numeric value by key
+    // without requiring Jackson (keeps the dependency footprint minimal).
+    // -----------------------------------------------------------------------
+
+    /** Returns the string value for "key":"value" in a JSON string, or null. */
+    private String extractJsonString(String json, String key) {
+        try {
+            String search = "\"" + key + "\"";
+            int idx = json.indexOf(search);
+            if (idx == -1) return null;
+            int colon = json.indexOf(':', idx + search.length());
+            int q1 = json.indexOf('"', colon + 1);
+            int q2 = json.indexOf('"', q1 + 1);
+            if (q1 == -1 || q2 == -1) return null;
+            return json.substring(q1 + 1, q2);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /** Returns the numeric value for "key":value in a JSON string, or null. */
+    private String extractJsonNumber(String json, String key) {
+        try {
+            String search = "\"" + key + "\"";
+            int idx = json.indexOf(search);
+            if (idx == -1) return null;
+            int colon = json.indexOf(':', idx + search.length());
+            // skip whitespace
+            int start = colon + 1;
+            while (start < json.length() && (json.charAt(start) == ' ' || json.charAt(start) == '\t')) start++;
+            int end = start;
+            while (end < json.length() && (Character.isDigit(json.charAt(end)) || json.charAt(end) == '.' || json.charAt(end) == '-')) end++;
+            if (end == start) return null;
+            return json.substring(start, end);
+        } catch (Exception e) {
+            return null;
+        }
     }
 }

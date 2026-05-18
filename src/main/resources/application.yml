@@ -1,12 +1,11 @@
-
 server:
   port: 7080
-spring:
 
+spring:
   application:
     name: smart-bike
     version: 1
-    description: Anonymous confession and advice platform backend
+    description: Smart Bike Rental Backend
     base-url: http://localhost:7080
 
   mail:
@@ -40,39 +39,50 @@ spring:
       name: admin
       password: admin123
 
-# Default Admin Credentials (CHANGE IN PRODUCTION!)
 admin:
   email: admin@smartbike.com
   password: Admin@123
   name: System Administrator
   phone: "+1234567890"
 
+# ─────────────────────────────────────────────────────────────────────────────
+# MQTT — broker.emqx.io (public broker, plain TCP port 1883, no SSL/TLS)
+#
+# Command topic  →  bike/{bikeId}/command
+#   Backend publishes: {"command":"UNLOCK","token":"1234"}
+#                      {"command":"LOCK","token":"1234"}
+#
+# Status topic   ←  bike/{bikeId}/status   (backend subscribes)
+#   ESP32 must send: {"token":"1234","status":"LOCKED"}
+#                    {"token":"1234","status":"UNLOCKED"}
+#                    {"token":"1234","battery":85}
+#                    {"token":"1234","lat":9.03,"lng":38.74}
+#
+# Token "1234" is used for testing. Change in production.
+# ─────────────────────────────────────────────────────────────────────────────
 mqtt:
-  broker: ssl://graycuckoo-7d8fe22a.a03.euc1.aws.hivemq.cloud:8883
+  broker: tcp://broker.emqx.io:1883
   client-id: spring-backend
-
-  username: hivemq.webclient.1778502183752
-  password: Q0V9xay,E#DM>hF:g18l
+  username: ""
+  password: ""
+  token: "1234"
 
 jwt:
   secret: mySecretKeyForSmartBikeRentalApplicationWithMinimum256BitsLength
   expiration: 86400000
 
-# Chapa Payment Gateway Configuration
 chapa:
   api-url: https://api.chapa.co/v1
   secret-key: CHASECK_TEST-0Td4aInPwTC3s4rSLoM3xjcPQ1YV0hmX
   webhook-secret: CHAPA_WEBHOOK_SECRET_2024_SKEGMARKET_b8f9c2e1a4d7f6h3j9k2m5n8p1q4r7s0t3u6v9w2x5y8z1a4b7c0d3e6f9g2h5i8j1k4l7m0n3o6p9q2r5s8t1u4v7w0x3y6z9
+  enabled: true
 
-# Application Callback URL for Chapa redirects
 app:
   callback-url: http://localhost:7080/api/payment/callback
 
-# REST Template Configuration for HTTP timeouts
 rest-template:
   connection-timeout: 5000
   read-timeout: 10000
-
 
 springdoc:
   api-docs:
@@ -88,24 +98,11 @@ springdoc:
     syntax-highlight:
       theme: monokai
     doc-expansion: list
-    use-root-path: false
   packages-to-scan: com.IoT.smart_bike_rental_backend.controller
   paths-to-match: /**
   show-actuator: false
 
-
 logging:
   level:
-    org:
-      springframework:
-        security:
-          web:
-            FilterChainProxy: DEBUG
-            access:
-              intercept:
-                FilterSecurityInterceptor: DEBUG
-    com:
-      IoT:
-        smart_bike_rental_backend:
-          controller:
-            AuthController: DEBUG
+    com.IoT.smart_bike_rental_backend: DEBUG
+    org.springframework.security.web.FilterChainProxy: DEBUG

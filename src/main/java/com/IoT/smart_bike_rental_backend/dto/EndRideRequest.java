@@ -5,8 +5,6 @@ import lombok.Data;
 @Data
 public class EndRideRequest {
     private Long rideId;
-
-    // Optional GPS coordinates for end location
     private Double endLatitude;
     private Double endLongitude;
 }

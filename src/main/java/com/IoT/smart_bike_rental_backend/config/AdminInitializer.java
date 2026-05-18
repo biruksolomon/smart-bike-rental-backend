@@ -14,8 +14,8 @@ import java.time.LocalDateTime;
 import java.util.Optional;
 
 /**
- * Initializes the default admin user on application startup.
- * The admin credentials can be configured via application.yml or environment variables.
+ * Creates the default admin user on first startup.
+ * Safe to run on every restart — skips creation if the admin already exists.
  */
 @Component
 @Order(1)
@@ -26,7 +26,6 @@ public class AdminInitializer implements CommandLineRunner {
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
 
-    // Admin credentials - configurable via application.yml
     @Value("${admin.email:admin@smartbike.com}")
     private String adminEmail;
 
@@ -40,27 +39,21 @@ public class AdminInitializer implements CommandLineRunner {
     private String adminPhone;
 
     @Override
-    public void run(String... args) throws Exception {
-        initializeAdmin();
-    }
+    public void run(String... args) {
+        Optional<User> existing = userRepository.findByEmail(adminEmail);
 
-    private void initializeAdmin() {
-        Optional<User> existingAdmin = userRepository.findByEmail(adminEmail);
-
-        if (existingAdmin.isPresent()) {
-            User admin = existingAdmin.get();
-            // Ensure the existing user has ADMIN role
+        if (existing.isPresent()) {
+            User admin = existing.get();
             if (!"ADMIN".equals(admin.getRole())) {
                 admin.setRole("ADMIN");
                 userRepository.save(admin);
-                log.info("Updated existing user {} to ADMIN role", adminEmail);
+                log.info("Promoted existing user {} to ADMIN role", adminEmail);
             } else {
                 log.info("Admin user already exists: {}", adminEmail);
             }
             return;
         }
 
-        // Create new admin user
         User admin = new User();
         admin.setEmail(adminEmail);
         admin.setName(adminName);

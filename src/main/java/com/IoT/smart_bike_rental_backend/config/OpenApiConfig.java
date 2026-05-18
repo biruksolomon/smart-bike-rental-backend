@@ -10,7 +10,6 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
-import java.util.ArrayList;
 import java.util.List;
 
 @Slf4j
@@ -29,52 +28,38 @@ public class OpenApiConfig {
     @Value("${spring.application.base-url}")
     private String baseUrl;
 
-    @Value("\n\n\t Admin credentials(The Only Admin!) \n\n\t\tEmail: admin@smartbike.com  \n\n\t\tPassword: Admin@123")
-    private String AdminCredentials;
-
     @Bean
     public OpenAPI customOpenAPI() {
-        List<Server> servers = new ArrayList<>();
+        log.info("Initialising Swagger / OpenAPI docs");
 
-        log.info("init swagger");
-        servers.add(new Server()
-                .url(baseUrl )
-                .description("Local Development Server"));
-        servers.add(new Server()
-                .url("https://smart-bike-rental-backend.onrender.com/")
-                .description("Cloud Dev server")
-        );
-        servers.add(new Server()
-                .url("https://016c-196-188-188-143.ngrok-free.app")
-                .description("Ngrok Dev Server")
-
-        );
-
-
+        String adminNote =
+            "\n\n\t Admin credentials (The Only Admin!)" +
+            "\n\n\t\tEmail: admin@smartbike.com" +
+            "\n\n\t\tPassword: Admin@123";
 
         return new OpenAPI()
                 .info(new Info()
                         .title(appName + " API")
                         .version(appVersion)
-                        .description(appDescription + AdminCredentials )
+                        .description(appDescription + adminNote)
                         .contact(new Contact()
                                 .name(appName + " Development Team")
                                 .email("besot@tech.com"))
                         .license(new License()
                                 .name("MIT License")
                                 .url("https://opensource.org/licenses/MIT")))
-                .servers(servers)
+                .servers(List.of(
+                        new Server().url(baseUrl).description("Local Development Server"),
+                        new Server().url("https://smart-bike-rental-backend.onrender.com/").description("Cloud Dev Server"),
+                        new Server().url("https://016c-196-188-188-143.ngrok-free.app").description("Ngrok Dev Server")
+                ))
                 .components(new Components()
-                        .addSecuritySchemes("bearerAuth", createBearerAuthScheme()))
+                        .addSecuritySchemes("bearerAuth", new SecurityScheme()
+                                .type(SecurityScheme.Type.HTTP)
+                                .bearerFormat("JWT")
+                                .scheme("bearer")
+                                .name("Authorization")
+                                .description("Enter your JWT token")))
                 .addSecurityItem(new SecurityRequirement().addList("bearerAuth"));
-    }
-
-    private SecurityScheme createBearerAuthScheme() {
-        return new SecurityScheme()
-                .type(SecurityScheme.Type.HTTP)
-                .bearerFormat("JWT")
-                .scheme("bearer")
-                .name("Authorization")
-                .description("Enter your JWT token");
     }
 }

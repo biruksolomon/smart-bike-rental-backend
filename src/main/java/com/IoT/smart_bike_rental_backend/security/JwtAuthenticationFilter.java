@@ -19,77 +19,58 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private final JwtTokenProvider jwtTokenProvider;
 
     @Override
-    protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
+    protected void doFilterInternal(HttpServletRequest request,
+                                    HttpServletResponse response,
+                                    FilterChain filterChain)
             throws ServletException, IOException {
-        // Skip JWT validation for Swagger/OpenAPI and public endpoints
-        String requestPath = request.getRequestURI();
-        if (isPublicPath(requestPath)) {
+
+        if (isPublicPath(request.getRequestURI())) {
             filterChain.doFilter(request, response);
             return;
         }
 
         try {
-            String jwt = getJwtFromRequest(request);
-
+            String jwt = extractToken(request);
             if (jwt != null && jwtTokenProvider.validateToken(jwt) && !jwtTokenProvider.isTokenExpired(jwt)) {
-                String userId = jwtTokenProvider.getUserIdFromToken(jwt);
-                String email = jwtTokenProvider.getEmailFromToken(jwt);
-                String role = jwtTokenProvider.getRoleFromToken(jwt);
+                request.setAttribute("userId", Long.parseLong(jwtTokenProvider.getUserIdFromToken(jwt)));
+                request.setAttribute("email",  jwtTokenProvider.getEmailFromToken(jwt));
+                request.setAttribute("role",   jwtTokenProvider.getRoleFromToken(jwt));
 
-                // Set request attributes for use in controllers
-                request.setAttribute("userId", Long.parseLong(userId));
-                request.setAttribute("email", email);
-                request.setAttribute("role", role);
-
-                // Create authentication token with role as authority
-                Authentication authentication = new UsernamePasswordAuthenticationToken(
-                        email, null, new ArrayList<>()
-                );
-                SecurityContextHolder.getContext().setAuthentication(authentication);
+                Authentication auth = new UsernamePasswordAuthenticationToken(
+                        jwtTokenProvider.getEmailFromToken(jwt), null, new ArrayList<>());
+                SecurityContextHolder.getContext().setAuthentication(auth);
             }
         } catch (Exception e) {
-            System.err.println("Could not set user authentication in security context: " + e.getMessage());
+            System.err.println("Could not set user authentication: " + e.getMessage());
         }
 
         filterChain.doFilter(request, response);
     }
 
-    private boolean isPublicPath(String requestPath) {
-        // Swagger/OpenAPI endpoints
-        if (requestPath.startsWith("/swagger-ui") ||
-                requestPath.startsWith("/v3/api-docs") ||
-                requestPath.startsWith("/swagger-resources") ||
-                requestPath.startsWith("/webjars") ||
-                requestPath.equals("/swagger-ui.html") ||
-                requestPath.equals("/swagger-ui/index.html") ||
-                requestPath.equals("/favicon.ico") ||
-                requestPath.equals("/test.html") ||
-                requestPath.equals("/index.html")) {
-            return true;
-        }
-
-        // Public authentication endpoints
-        if (requestPath.equals("/api/auth/register") ||
-                requestPath.equals("/api/auth/login") ||
-                requestPath.equals("/api/auth/validate") ||
-                requestPath.equals("/api/auth/forgot-password") ||
-                requestPath.equals("/api/auth/reset-password") ||
-                requestPath.equals("/api/auth/validate-reset-code")) {
-            return true;
-        }
-
-        // Public bike listing endpoints
-        if (requestPath.startsWith("/api/bikes") && !requestPath.matches(".*/api/bikes/\\d+/(book|return|details).*")) {
-            return true;
-        }
-
-        return false;
+    private boolean isPublicPath(String path) {
+        return path.startsWith("/swagger-ui")
+            || path.startsWith("/v3/api-docs")
+            || path.startsWith("/swagger-resources")
+            || path.startsWith("/webjars")
+            || path.equals("/swagger-ui.html")
+            || path.equals("/swagger-ui/index.html")
+            || path.equals("/favicon.ico")
+            || path.equals("/test.html")
+            || path.equals("/index.html")
+            || path.equals("/api/auth/register")
+            || path.equals("/api/auth/login")
+            || path.equals("/api/auth/validate")
+            || path.equals("/api/auth/forgot-password")
+            || path.equals("/api/auth/reset-password")
+            || path.equals("/api/auth/validate-reset-code")
+            || (path.startsWith("/api/bikes")
+                && !path.matches(".*/api/bikes/\\d+/(book|return|details).*"));
     }
 
-    private String getJwtFromRequest(HttpServletRequest request) {
-        String bearerToken = request.getHeader("Authorization");
-        if (bearerToken != null && bearerToken.startsWith("Bearer ")) {
-            return bearerToken.substring(7);
+    private String extractToken(HttpServletRequest request) {
+        String header = request.getHeader("Authorization");
+        if (header != null && header.startsWith("Bearer ")) {
+            return header.substring(7);
         }
         return null;
     }

@@ -21,18 +21,11 @@ public class RestClientConfig {
 
     @Bean
     public RestTemplate restTemplate() {
-
-        CloseableHttpClient httpClient = HttpClients.custom()
-                .build();
-
-        HttpComponentsClientHttpRequestFactory factory =
-                new HttpComponentsClientHttpRequestFactory();
-
+        CloseableHttpClient httpClient = HttpClients.custom().build();
+        HttpComponentsClientHttpRequestFactory factory = new HttpComponentsClientHttpRequestFactory();
         factory.setConnectionRequestTimeout(Timeout.ofMilliseconds(connectionTimeout).toDuration());
         factory.setReadTimeout(Timeout.ofMilliseconds(readTimeout).toDuration());
-
         factory.setHttpClient(httpClient);
-
         return new RestTemplate(factory);
     }
 

@@ -5,10 +5,7 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-@Data
-@AllArgsConstructor
-@NoArgsConstructor
-@Builder
+@Data @AllArgsConstructor @NoArgsConstructor @Builder
 public class TokenValidationResponse {
     private Boolean valid;
     private String message;

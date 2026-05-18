@@ -32,40 +32,40 @@ public class Ride {
     @Column(precision = 10, scale = 2)
     private BigDecimal cost;
 
-    // Duration in minutes (calculated field)
+    /** Duration in minutes — calculated at ride end. */
     private Long durationMinutes;
 
-    // Payment status for the ride (PENDING, AUTHORIZED, COMPLETED, FAILED, REFUNDED)
+    /**
+     * Payment states:
+     *   PENDING            – ride created, not yet ended
+     *   PENDING_PAYMENT    – ride ended, Chapa checkout issued
+     *   COMPLETED          – Chapa webhook confirmed success
+     *   PAYMENT_FAILED     – Chapa reported failure or verification mismatch
+     *   ADMIN_CLOSED       – force-ended by admin
+     */
     @Column(name = "payment_status")
     private String paymentStatus = "PENDING";
 
-    // Chapa transaction reference (unique identifier from Chapa)
+    /** Chapa transaction reference, stored on the Ride for webhook lookup. */
     @Column(name = "chapa_tx_ref", unique = true)
     private String chapaTxRef;
 
-    // Chapa pre-authorization ID (for later capture)
     @Column(name = "chapa_auth_id")
     private String chapaAuthId;
 
-    // Chapa capture/charge ID (final payment proof)
     @Column(name = "chapa_charge_id")
     private String chapaChargeId;
 
     @Column(name = "is_active")
     private boolean active;
 
-    // Start location (optional - for GPS tracking)
     private Double startLatitude;
     private Double startLongitude;
-
-    // End location (optional - for GPS tracking)
     private Double endLatitude;
     private Double endLongitude;
 
     @PrePersist
     protected void onCreate() {
-        if (startTime == null) {
-            startTime = LocalDateTime.now();
-        }
+        if (startTime == null) startTime = LocalDateTime.now();
     }
 }

@@ -5,13 +5,13 @@ spring:
   application:
     name: smart-bike
     version: 1
-    description: WiFi-based Smart Bike Rental Backend
+    description: Smart Bike Rental Backend (Docker)
     base-url: http://app:9080
 
   datasource:
-    url: jdbc:postgresql://ep-summer-salad-aqlm9g8k-pooler.c-8.us-east-1.aws.neon.tech/neondb?sslmode=require
-    username: neondb_owner
-    password: npg_X4iqTO5aQkFj
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://postgres:5432/smartbike}
+    username: ${SPRING_DATASOURCE_USERNAME:smartbike_user}
+    password: ${SPRING_DATASOURCE_PASSWORD:smartbike_pass}
     driver-class-name: org.postgresql.Driver
     hikari:
       maximum-pool-size: 10
@@ -23,16 +23,12 @@ spring:
       ddl-auto: update
     show-sql: false
     database-platform: org.hibernate.dialect.PostgreSQLDialect
-    properties:
-      hibernate:
-        format_sql: true
-        use_sql_comments: true
 
   mail:
     host: smtp.gmail.com
     port: 587
-    username: biruksolomonmoges@gmail.com
-    password: kbemdrrbdmkjxden
+    username: ${SPRING_MAIL_USERNAME}
+    password: ${SPRING_MAIL_PASSWORD}
     from: ${SPRING_MAIL_FROM:noreply@smartbike.com}
     properties:
       mail:
@@ -41,9 +37,6 @@ spring:
           starttls:
             enable: true
             required: true
-          connectiontimeout: 5000
-          timeout: 5000
-          writetimeout: 5000
 
   security:
     user:
@@ -57,16 +50,23 @@ admin:
   phone: ${ADMIN_PHONE:+1234567890}
 
 mqtt:
-  broker: ssl://graycuckoo-7d8fe22a.a03.euc1.aws.hivemq.cloud:8883
+  broker: tcp://broker.emqx.io:1883
   client-id: smart-bike-spring-backend
-
-  username: hivemq.webclient.1778502183752
-  password: Q0V9xay,E#DM>hF:g18l
-
+  username: ""
+  password: ""
+  token: "1234"
 
 jwt:
   secret: ${JWT_SECRET:mySecretKeyForSmartBikeRentalApplicationWithMinimum256BitsLength}
   expiration: ${JWT_EXPIRATION:86400000}
+
+chapa:
+  secret-key: ${CHAPA_SECRET_KEY:CHASECK_TEST-0Td4aInPwTC3s4rSLoM3xjcPQ1YV0hmX}
+  webhook-secret: ${CHAPA_WEBHOOK_SECRET:changeme}
+  enabled: ${CHAPA_ENABLED:true}
+
+app:
+  callback-url: ${APP_CALLBACK_URL:http://app:9080/api/payment/callback}
 
 springdoc:
   api-docs:
@@ -75,11 +75,8 @@ springdoc:
   swagger-ui:
     path: /swagger-ui.html
     enabled: true
-    operations-sorter: method
-    tags-sorter: alpha
     try-it-out-enabled: true
     filter: true
-    doc-expansion: list
   packages-to-scan: com.IoT.smart_bike_rental_backend.controller
   paths-to-match: /**
   show-actuator: false
@@ -96,10 +93,6 @@ management:
 logging:
   level:
     root: INFO
-    com:
-      IoT:
-        smart_bike_rental_backend: DEBUG
+    com.IoT.smart_bike_rental_backend: DEBUG
   file:
     name: /app/logs/application.log
-    max-size: 10MB
-    max-history: 10

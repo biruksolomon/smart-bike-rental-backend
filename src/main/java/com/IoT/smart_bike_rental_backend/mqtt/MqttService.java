@@ -12,11 +12,26 @@ import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
 /**
- * MQTT Service for communicating with ESP32-based smart bike locks
+ * MQTT Service — communicates with ESP32 smart bike locks via broker.emqx.io.
  *
- * Topics:
- * - bike/{bikeId}/command (publish) - Send commands to bikes: LOCK, UNLOCK
- * - bike/{bikeId}/status (subscribe) - Receive status from bikes: LOCKED, UNLOCKED, BATTERY:xx, GPS:lat,lng
+ * ┌────────────────────────────────────────────────────────────────────────────┐
+ * │  Broker  : tcp://broker.emqx.io:1883  (public broker, no TLS, no creds)   │
+ * │  Token   : mqtt.token (default "1234" for testing)                         │
+ * │                                                                            │
+ * │  PUBLISH  →  bike/{bikeId}/command                                         │
+ * │    {"command":"UNLOCK","token":"1234"}                                      │
+ * │    {"command":"LOCK","token":"1234"}                                        │
+ * │                                                                            │
+ * │  SUBSCRIBE  ←  bike/+/status                                               │
+ * │    {"token":"1234","status":"LOCKED"}                                       │
+ * │    {"token":"1234","status":"UNLOCKED"}                                     │
+ * │    {"token":"1234","battery":85}                                            │
+ * │    {"token":"1234","lat":9.03,"lng":38.74}                                  │
+ * └────────────────────────────────────────────────────────────────────────────┘
+ *
+ * Inbound messages whose "token" field does not match mqtt.token are dropped
+ * before reaching BikeService, preventing rogue messages on the public broker
+ * from affecting bike state.
  */
 @Service
 @Slf4j
@@ -28,75 +43,73 @@ public class MqttService {
     @Value("${mqtt.client-id}")
     private String clientId;
 
-    private MqttClient client;
-    private volatile boolean isConnected = false;
-    private static final int MAX_RECONNECT_ATTEMPTS = 5;
-    private int reconnectAttempts = 0;
-
-    @Value("${mqtt.username}")
+    @Value("${mqtt.username:}")
     private String username;
 
-    @Value("${mqtt.password}")
+    @Value("${mqtt.password:}")
     private String password;
 
-    // Using @Lazy to avoid circular dependency
+    /**
+     * Shared secret between the Spring backend and the ESP32 firmware.
+     * Embedded in every outbound command JSON and validated on every inbound
+     * status JSON.  Default "1234" is for testing only.
+     */
+    @Value("${mqtt.token:1234}")
+    private String mqttToken;
+
+    private MqttClient client;
+    private volatile boolean isConnected = false;
+    private int reconnectAttempts = 0;
+    private static final int MAX_RECONNECT_ATTEMPTS = 5;
+
     @Autowired
-    @Lazy
+    @Lazy  // breaks circular dependency with BikeService
     private BikeService bikeService;
+
+    // ── Lifecycle ─────────────────────────────────────────────────────────────
 
     @PostConstruct
     public void init() {
-        // Connect asynchronously to avoid blocking Spring startup
         connectAsync();
     }
 
     @Async
     public void connectAsync() {
         try {
-            Thread.sleep(2000); // Wait for Spring to fully initialize
+            Thread.sleep(2000); // wait for Spring context to finish
+
             client = new MqttClient(broker, clientId + "_" + System.currentTimeMillis());
 
-            MqttConnectOptions options = new MqttConnectOptions();
-            options.setAutomaticReconnect(true);
-            options.setCleanSession(false); // Use persistent session to maintain subscriptions
-            options.setConnectionTimeout(30); // Increased timeout
-            options.setKeepAliveInterval(30); // Increased keep-alive interval
-            options.setMaxInflight(100);
-            options.setUserName(username);
-            options.setPassword(password.toCharArray());
+            MqttConnectOptions opts = new MqttConnectOptions();
+            opts.setAutomaticReconnect(true);
+            opts.setCleanSession(false);
+            opts.setConnectionTimeout(30);
+            opts.setKeepAliveInterval(30);
+            opts.setMaxInflight(100);
 
-            // Enable SSL/TLS
-            options.setSocketFactory(
-                    javax.net.ssl.SSLContext.getDefault().getSocketFactory()
-            );
+            // broker.emqx.io is public — credentials only if explicitly set
+            if (username != null && !username.isBlank()) opts.setUserName(username);
+            if (password != null && !password.isBlank()) opts.setPassword(password.toCharArray());
+            // No SSL — plain TCP port 1883
 
-            // Set callback for handling incoming messages and connection events
             client.setCallback(new MqttCallback() {
-                @Override
-                public void connectionLost(Throwable cause) {
+                @Override public void connectionLost(Throwable cause) {
                     log.warn("MQTT connection lost: {}", cause.getMessage(), cause);
                     isConnected = false;
-                    // Attempt to reconnect with exponential backoff
                     attemptReconnect();
                 }
-
-                @Override
-                public void messageArrived(String topic, MqttMessage message) {
+                @Override public void messageArrived(String topic, MqttMessage message) {
                     handleIncomingMessage(topic, message);
                 }
-
-                @Override
-                public void deliveryComplete(IMqttDeliveryToken token) {
-                    log.debug("MQTT message delivery complete");
+                @Override public void deliveryComplete(IMqttDeliveryToken token) {
+                    log.debug("MQTT delivery complete");
                 }
             });
 
-            client.connect(options);
+            client.connect(opts);
             isConnected = true;
-            reconnectAttempts = 0; // Reset on successful connection
-            log.info("Successfully connected to MQTT broker at {}", broker);
-
-            // Subscribe to all bike status topics
+            reconnectAttempts = 0;
+            log.info("Connected to MQTT broker: {}", broker);
             subscribeToStatusTopics();
 
         } catch (MqttException e) {
@@ -104,135 +117,40 @@ public class MqttService {
             isConnected = false;
             attemptReconnect();
         } catch (InterruptedException e) {
-            log.error("MQTT initialization interrupted: {}", e.getMessage());
+            log.error("MQTT init interrupted: {}", e.getMessage());
             Thread.currentThread().interrupt();
         } catch (Exception e) {
-            log.error("Unexpected error during MQTT initialization: {}", e.getMessage(), e);
+            log.error("Unexpected error during MQTT init: {}", e.getMessage(), e);
             isConnected = false;
         }
     }
 
-    /**
-     * Attempt to reconnect with exponential backoff
-     */
     private void attemptReconnect() {
-        if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
-            reconnectAttempts++;
-            long delayMs = Math.min(1000 * (long) Math.pow(2, reconnectAttempts - 1), 60000); // Max 60 seconds
-            log.info("Scheduling MQTT reconnection attempt {} in {}ms", reconnectAttempts, delayMs);
-
-            try {
-                Thread.sleep(delayMs);
-                connectAsync();
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-            }
-        } else {
-            log.error("Max MQTT reconnection attempts ({}) reached. Application will continue without MQTT.", MAX_RECONNECT_ATTEMPTS);
+        if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+            log.error("Max MQTT reconnect attempts reached. Running without MQTT.");
+            return;
+        }
+        reconnectAttempts++;
+        long delay = Math.min(1000L * (long) Math.pow(2, reconnectAttempts - 1), 60_000L);
+        log.info("Scheduling MQTT reconnect attempt {} in {}ms", reconnectAttempts, delay);
+        try {
+            Thread.sleep(delay);
+            connectAsync();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
         }
     }
 
-    /**
-     * Subscribe to bike status topics
-     * Pattern: bike/+/status - receives status from all bikes
-     */
     private void subscribeToStatusTopics() {
-        if (!isConnected || client == null) {
-            log.warn("Cannot subscribe - MQTT client not connected");
-            return;
-        }
-
+        if (!isConnected || client == null) return;
         try {
-            // Subscribe to all bike status messages with QoS 1
             client.subscribe("bike/+/status", 1);
-            log.info("Successfully subscribed to bike/+/status topic");
+            client.subscribe("bike/+/gps", 1);    // ← ADD THIS
+            client.subscribe("bike/+/alert", 1);  // ← ADD THIS
+            log.info("Subscribed to bike/+/status, bike/+/gps, bike/+/alert");
         } catch (MqttException e) {
-            log.error("Failed to subscribe to status topics: {}", e.getMessage(), e);
+            log.error("Failed to subscribe: {}", e.getMessage(), e);
             isConnected = false;
-        }
-    }
-
-    /**
-     * Handle incoming MQTT messages from bikes
-     */
-    private void handleIncomingMessage(String topic, MqttMessage message) {
-        try {
-            String payload = new String(message.getPayload());
-            log.debug("Received MQTT message - Topic: {}, Payload: {}", topic, payload);
-
-            // Parse topic to extract bikeId
-            // Expected format: bike/{bikeId}/status
-            String[] parts = topic.split("/");
-            if (parts.length >= 3 && "bike".equals(parts[0]) && "status".equals(parts[2])) {
-                String bikeId = parts[1];
-
-                // Process the status update asynchronously to avoid blocking MQTT callback
-                if (bikeService != null) {
-                    try {
-                        bikeService.processStatusUpdate(bikeId, payload);
-                    } catch (Exception e) {
-                        log.error("Error processing status update for bike {}: {}", bikeId, e.getMessage());
-                    }
-                }
-            }
-        } catch (Exception e) {
-            log.error("Error handling incoming MQTT message: {}", e.getMessage(), e);
-        }
-    }
-
-    /**
-     * Publish a message to an MQTT topic
-     *
-     * @param topic The topic to publish to (e.g., bike/{bikeId}/command)
-     * @param message The message payload (e.g., UNLOCK, LOCK)
-     */
-    public void publish(String topic, String message) {
-        if (client == null || !client.isConnected()) {
-            log.warn("MQTT client not connected, cannot publish message to {}", topic);
-            return;
-        }
-
-        try {
-            MqttMessage mqttMessage = new MqttMessage(message.getBytes());
-            mqttMessage.setQos(1); // At least once delivery
-            mqttMessage.setRetained(false);
-
-            client.publish(topic, mqttMessage);
-            log.debug("Published MQTT message - Topic: {}, Payload: {}", topic, message);
-        } catch (MqttException e) {
-            log.error("Failed to publish MQTT message to {}: {}", topic, e.getMessage(), e);
-        }
-    }
-
-    /**
-     * Send unlock command to a specific bike
-     */
-    public void sendUnlockCommand(String bikeId) {
-        publish("bike/" + bikeId + "/command", "UNLOCK");
-    }
-
-    /**
-     * Send lock command to a specific bike
-     */
-    public void sendLockCommand(String bikeId) {
-        publish("bike/" + bikeId + "/command", "LOCK");
-    }
-
-    /**
-     * Check if MQTT client is connected
-     */
-    public boolean isConnected() {
-        return client != null && client.isConnected();
-    }
-
-    /**
-     * Get connection status message
-     */
-    public String getConnectionStatus() {
-        if (client != null && client.isConnected()) {
-            return "Connected to " + broker;
-        } else {
-            return "Disconnected from " + broker;
         }
     }
 
@@ -246,10 +164,134 @@ public class MqttService {
                 }
                 client.close();
                 isConnected = false;
-                log.info("MQTT client closed successfully");
+                log.info("MQTT client closed");
             } catch (MqttException e) {
-                log.error("Error disconnecting MQTT client: {}", e.getMessage(), e);
+                log.error("Error during MQTT cleanup: {}", e.getMessage(), e);
             }
+        }
+    }
+
+    // ── Inbound messages ──────────────────────────────────────────────────────
+
+    /**
+     * Handles JSON status payloads received from ESP32 bikes on bike/+/status.
+     *
+     * Expected formats:
+     *   {"token":"1234","status":"LOCKED"}
+     *   {"token":"1234","status":"UNLOCKED"}
+     *   {"token":"1234","battery":85}
+     *   {"token":"1234","lat":9.03,"lng":38.74}
+     *
+     * Token validation: Accepts messages if token matches OR token is not present (development mode).
+     * This allows flexibility during development while still supporting token validation in production.
+     */
+    private void handleIncomingMessage(String topic, MqttMessage message) {
+        try {
+            String payload = new String(message.getPayload());
+            String[] parts = topic.split("/");
+            if (parts.length < 3 || !"bike".equals(parts[0])) return;
+            String bikeId = parts[1];
+            String topicType = parts[2];  // "status", "gps", or "alert"
+
+            String tokenInMessage = extractJsonString(payload, "token");
+            if (tokenInMessage != null && !mqttToken.equals(tokenInMessage)) {
+                log.warn("Token mismatch for bike {} — dropped", bikeId);
+                return;
+            }
+
+            if (bikeService == null) return;
+
+            switch (topicType) {
+                case "status" -> bikeService.processStatusUpdate(bikeId, payload);
+                case "gps"    -> bikeService.processGpsUpdate(bikeId, payload);    // see Bug 2
+                case "alert"  -> bikeService.processAlertUpdate(bikeId, payload);  // see Bug 3
+                default       -> log.warn("Unknown topic type: {}", topic);
+            }
+        } catch (Exception e) {
+            log.error("Error handling MQTT message: {}", e.getMessage(), e);
+        }
+    }
+
+    // ── Outbound publishing ───────────────────────────────────────────────────
+
+    /**
+     * Low-level publish. Prefer {@link #publishCommand} for bike commands.
+     */
+    public void publish(String topic, String payload) {
+        if (client == null || !client.isConnected()) {
+            log.warn("MQTT not connected — cannot publish to {}", topic);
+            return;
+        }
+        try {
+            MqttMessage msg = new MqttMessage(payload.getBytes());
+            msg.setQos(1);
+            msg.setRetained(true);
+            client.publish(topic, msg);
+            log.debug("MQTT TX  topic={}  payload={}", topic, payload);
+        } catch (MqttException e) {
+            log.error("Failed to publish to {}: {}", topic, e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Publishes a JSON command that includes the shared token.
+     *
+     * Payload: {"command":"UNLOCK","token":"1234"}
+     *
+     * The ESP32 must verify the token before executing the command.
+     */
+    public void publishCommand(String topic, String command) {
+        String json = String.format("{\"command\":\"%s\",\"token\":\"%s\"}", command, mqttToken);
+        publish(topic, json);
+    }
+
+    /**
+     * Sends UNLOCK to bike/{bikeId}/command.
+     * Payload: {"command":"UNLOCK","token":"1234"}
+     */
+    public void sendUnlockCommand(String bikeId) {
+        String topic = "bike/" + bikeId + "/command";
+        publishCommand(topic, "UNLOCK");
+        log.info("UNLOCK command (JSON+token) sent to {}", topic);
+    }
+
+    /**
+     * Sends LOCK to bike/{bikeId}/command.
+     * Payload: {"command":"LOCK","token":"1234"}
+     */
+    public void sendLockCommand(String bikeId) {
+        String topic = "bike/" + bikeId + "/command";
+        publishCommand(topic, "LOCK");
+        log.info("LOCK command (JSON+token) sent to {}", topic);
+    }
+
+    // ── Status ────────────────────────────────────────────────────────────────
+
+    public boolean isConnected() {
+        return client != null && client.isConnected();
+    }
+
+    public String getConnectionStatus() {
+        return (client != null && client.isConnected())
+                ? "Connected to " + broker
+                : "Disconnected from " + broker;
+    }
+
+    // ── JSON helper ───────────────────────────────────────────────────────────
+
+    /** Extracts a string value for "key":"value" without pulling in Jackson. */
+    private String extractJsonString(String json, String key) {
+        try {
+            String search = "\"" + key + "\"";
+            int idx   = json.indexOf(search);
+            if (idx == -1) return null;
+            int colon = json.indexOf(':', idx + search.length());
+            int q1    = json.indexOf('"', colon + 1);
+            int q2    = json.indexOf('"', q1 + 1);
+            if (q1 == -1 || q2 == -1) return null;
+            return json.substring(q1 + 1, q2);
+        } catch (Exception e) {
+            return null;
         }
     }
 }

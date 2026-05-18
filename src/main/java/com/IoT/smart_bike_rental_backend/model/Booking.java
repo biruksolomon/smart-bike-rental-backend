@@ -4,13 +4,16 @@ import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+
 import java.time.LocalDateTime;
 
 /**
- * Booking model - represents a booking before the ride starts
+ * Booking — created when a user scans a QR code.
  *
- * Flow: User scans QR -> Creates Booking -> Returns bookingId ->
- *       User clicks Start -> Creates Ride using bookingId -> Returns rideId
+ * Status flow: PENDING → RIDE_STARTED | CANCELLED
+ *
+ * The bookingId returned here is passed to RideService.startRide()
+ * to create the Ride and send the MQTT UNLOCK command.
  */
 @Entity
 @Table(name = "bookings")
@@ -35,7 +38,7 @@ public class Booking {
     private LocalDateTime bookingTime;
 
     @Column(name = "status", nullable = false)
-    private String status; // PENDING, CONFIRMED, RIDE_STARTED, CANCELLED
+    private String status;
 
     @Column(name = "qr_code")
     private String qrCode;

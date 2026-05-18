@@ -11,34 +11,14 @@ import java.util.Optional;
 
 @Repository
 public interface Riderepository extends JpaRepository<Ride, Long> {
-
-   // Find active ride by bike entity
-   Optional<Ride> findByBikeAndActiveTrue(Bike bike);
-
-   // Find active ride by user entity
-   Optional<Ride> findByUserAndActiveTrue(User user);
-
-   // Find ride history for a user ordered by start time
-   List<Ride> findByUserIdOrderByStartTimeDesc(Long userId);
-
-   // Find all active rides
-   List<Ride> findByActiveTrue();
-
-   // Find rides by bike
-   List<Ride> findByBikeOrderByStartTimeDesc(Bike bike);
-
-   // Find all active rides (endTime is null)
-   List<Ride> findByEndTimeIsNull();
-
-   // Find rides by user entity
-   List<Ride> findByUser(User user);
-
-   // Find active rides by user (no end time)
-   List<Ride> findByUserAndEndTimeIsNull(User user);
-
-   // Find rides by bike entity
-   List<Ride> findByBike(Bike bike);
-
-   // Find ride by Chapa transaction reference (for webhook processing)
-   Optional<Ride> findByChapaTxRef(String chapaTxRef);
+    Optional<Ride> findByBikeAndActiveTrue(Bike bike);
+    Optional<Ride> findByUserAndActiveTrue(User user);
+    List<Ride>     findByUserIdOrderByStartTimeDesc(Long userId);
+    List<Ride>     findByActiveTrue();
+    List<Ride>     findByBikeOrderByStartTimeDesc(Bike bike);
+    List<Ride>     findByEndTimeIsNull();
+    List<Ride>     findByUser(User user);
+    List<Ride>     findByUserAndEndTimeIsNull(User user);
+    List<Ride>     findByBike(Bike bike);
+    Optional<Ride> findByChapaTxRef(String chapaTxRef);
 }

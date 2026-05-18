@@ -17,15 +17,15 @@ public class Bike {
     @Column(unique = true, nullable = false)
     private String bikeId;
 
-    // Bike type: BMX, Phoenix, Mountain, Road, Hybrid, etc.
+    /** Bike type: BMX, Phoenix, Mountain, Road, Hybrid, etc. */
     @Column(nullable = false)
     private String bikeType = "Mountain";
 
-    // Bike size: 16, 18, 20, 24, 26, 27.5, 29 (in inches)
+    /** Bike size in inches: 16, 18, 20, 24, 26, 27.5, 29 */
     @Column(nullable = false)
     private String bikeSize = "26";
 
-    // Status: LOCKED, IN_USE, MAINTENANCE, UNAVAILABLE
+    /** Status: LOCKED | IN_USE | MAINTENANCE | UNAVAILABLE */
     private String status = "LOCKED";
 
     @Column(unique = true)
@@ -38,25 +38,20 @@ public class Bike {
 
     private LocalDateTime lastUpdated;
 
-    // Battery level percentage (0-100)
+    /** Battery level percentage 0–100, reported by ESP32 via MQTT. */
     private Integer batteryLevel;
 
-    // GPS location
+    /** GPS coordinates, updated by ESP32 via MQTT. */
     private Double latitude;
     private Double longitude;
 
-    // Bike condition/health status
     @Column(name = "is_usable")
     private Boolean isUsable = true;
 
     @PrePersist
     protected void onCreate() {
-        if (lastUpdated == null) {
-            lastUpdated = LocalDateTime.now();
-        }
-        if (status == null) {
-            status = "LOCKED";
-        }
+        if (lastUpdated == null) lastUpdated = LocalDateTime.now();
+        if (status == null)      status      = "LOCKED";
     }
 
     @PreUpdate
@@ -64,7 +59,7 @@ public class Bike {
         lastUpdated = LocalDateTime.now();
     }
 
-    // Helper method to check if bike is available for rental
+    /** Returns true when the bike is available for a new rental. */
     public boolean isAvailable() {
         return "LOCKED".equals(status) && Boolean.TRUE.equals(isUsable);
     }

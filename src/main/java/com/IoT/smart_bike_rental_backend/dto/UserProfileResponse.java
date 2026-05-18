@@ -7,10 +7,7 @@ import lombok.NoArgsConstructor;
 
 import java.time.LocalDateTime;
 
-@Data
-@AllArgsConstructor
-@NoArgsConstructor
-@Builder
+@Data @AllArgsConstructor @NoArgsConstructor @Builder
 public class UserProfileResponse {
     private Long id;
     private String email;

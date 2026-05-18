@@ -29,6 +29,8 @@ import java.util.UUID;
 @Service
 @RequiredArgsConstructor
 @Slf4j
+//json token + bike 01
+//broker.emqx.io
 public class RideService {
 
     private final Riderepository rideRepository;
@@ -259,33 +261,31 @@ public class RideService {
     }
 
     /**
-     * Send UNLOCK command to bike via MQTT
-     * Topic format: bike/{bikeId}/command
-     * Payload: UNLOCK
+     * Send UNLOCK command to bike via MQTT.
+     * Publishes JSON payload: {"command":"UNLOCK","token":"<mqttToken>"}
+     * Topic: bike/{bikeId}/command
      */
     private void sendUnlockCommand(String bikeId) {
-        String topic = "bike/" + bikeId + "/command";
         try {
-            mqttService.publish(topic, "UNLOCK");
-            log.info("UNLOCK command sent to topic: {}", topic);
+            mqttService.sendUnlockCommand(bikeId);
+            log.info("UNLOCK command (JSON+token) sent to bike/{}/command", bikeId);
         } catch (Exception e) {
-            log.error("Failed to send UNLOCK command to {}: {}", topic, e.getMessage());
+            log.error("Failed to send UNLOCK command to bike {}: {}", bikeId, e.getMessage());
             // Don't throw - the ride is still valid even if MQTT fails
         }
     }
 
     /**
-     * Send LOCK command to bike via MQTT
-     * Topic format: bike/{bikeId}/command
-     * Payload: LOCK
+     * Send LOCK command to bike via MQTT.
+     * Publishes JSON payload: {"command":"LOCK","token":"<mqttToken>"}
+     * Topic: bike/{bikeId}/command
      */
     private void sendLockCommand(String bikeId) {
-        String topic = "bike/" + bikeId + "/command";
         try {
-            mqttService.publish(topic, "LOCK");
-            log.info("LOCK command sent to topic: {}", topic);
+            mqttService.sendLockCommand(bikeId);
+            log.info("LOCK command (JSON+token) sent to bike/{}/command", bikeId);
         } catch (Exception e) {
-            log.error("Failed to send LOCK command to {}: {}", topic, e.getMessage());
+            log.error("Failed to send LOCK command to bike {}: {}", bikeId, e.getMessage());
             // Don't throw - the ride is still completed even if MQTT fails
         }
     }

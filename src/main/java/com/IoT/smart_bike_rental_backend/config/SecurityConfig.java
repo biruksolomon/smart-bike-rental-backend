@@ -39,52 +39,45 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
-                .csrf(csrf -> csrf.disable())
-                .cors(cors -> cors.configurationSource(corsConfigurationSource()))
-                .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-                .authorizeHttpRequests(authz -> authz
-                        // Swagger/OpenAPI endpoints - MUST be first
-                        .requestMatchers(
-                                "/swagger-ui.html",
-                                "/swagger-ui/index.html",
-                                "/swagger-ui/**",
-                                "/v3/api-docs",
-                                "/v3/api-docs/**",
-                                "/swagger-resources",
-                                "/swagger-resources/**",
-                                "/webjars/**",
-                                "/favicon.ico",
-                                "/error"
-                        ).permitAll()
-                        // Static resources and admin UI
-                        .requestMatchers("/static/**").permitAll()
-                        .requestMatchers("/admin/**").permitAll()
-                        .requestMatchers("/test.html").permitAll()
-                        // Public authentication endpoints
-                        .requestMatchers("/api/auth/register", "/api/auth/login", "/api/auth/validate").permitAll()
-                        // Public password reset endpoints
-                        .requestMatchers("/api/auth/forgot-password", "/api/auth/reset-password", "/api/auth/validate-reset-code").permitAll()
-                        // Public bike listing
-                        .requestMatchers(HttpMethod.GET, "/api/bikes", "/api/bikes/**").permitAll()
-                        // All other requests require authentication
-                        .anyRequest().authenticated()
-                )
-                .addFilterBefore(jwtAuthenticationFilter(), UsernamePasswordAuthenticationFilter.class)
-                .httpBasic(basic -> basic.disable());
+            .csrf(csrf -> csrf.disable())
+            .cors(cors -> cors.configurationSource(corsConfigurationSource()))
+            .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+            .authorizeHttpRequests(authz -> authz
+                // Swagger / OpenAPI — must be first
+                .requestMatchers(
+                    "/swagger-ui.html", "/swagger-ui/index.html", "/swagger-ui/**",
+                    "/v3/api-docs", "/v3/api-docs/**",
+                    "/swagger-resources", "/swagger-resources/**",
+                    "/webjars/**", "/favicon.ico", "/error"
+                ).permitAll()
+                // Static and admin UI
+                .requestMatchers("/static/**", "/admin/**", "/test.html").permitAll()
+                // Public auth endpoints
+                .requestMatchers(
+                    "/api/auth/register", "/api/auth/login", "/api/auth/validate",
+                    "/api/auth/forgot-password", "/api/auth/reset-password",
+                    "/api/auth/validate-reset-code"
+                ).permitAll()
+                // Public bike listing
+                .requestMatchers(HttpMethod.GET, "/api/bikes", "/api/bikes/**").permitAll()
+                // Everything else requires a valid JWT
+                .anyRequest().authenticated()
+            )
+            .addFilterBefore(jwtAuthenticationFilter(), UsernamePasswordAuthenticationFilter.class)
+            .httpBasic(basic -> basic.disable());
 
         return http.build();
     }
 
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
-        CorsConfiguration configuration = new CorsConfiguration();
-        configuration.setAllowedOrigins(Arrays.asList("*"));
-        configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS"));
-        configuration.setAllowedHeaders(Arrays.asList("*"));
-        configuration.setAllowCredentials(false);
-
+        CorsConfiguration config = new CorsConfiguration();
+        config.setAllowedOrigins(Arrays.asList("*"));
+        config.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS"));
+        config.setAllowedHeaders(Arrays.asList("*"));
+        config.setAllowCredentials(false);
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
-        source.registerCorsConfiguration("/**", configuration);
+        source.registerCorsConfiguration("/**", config);
         return source;
     }
 }
